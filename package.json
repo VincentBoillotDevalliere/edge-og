@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:cf": "next-on-pages build",
+    "deploy:cf": "wrangler pages deploy .vercel/output/static --project-name=edge-og-dashboard"
+  
   },
   "keywords": [],
   "author": "",

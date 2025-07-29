@@ -1,5 +1,19 @@
 [[kv_namespaces]]
 binding = "TEMPLATES"
+id = "ddbd3f297316429ba3d32ab9909c3af9"
+preview_id = "d62ebc2e836b4b64be0d125c276edbf9"
+
+[[kv_namespaces]]
+binding = "USAGE"
+id = "cdd7971a04fb43758334787a84c53c57"]
+binding = "TEMPLATES"
+id = "ddbd3f297316429ba3d32ab9909c3af9"
+preview_id = "d62ebc2e836b4b64be0d125c276edbf9"
+
+[[kv_namespaces]]
+binding = "USAGE"
+id = "cdd7971a04fb43758334787a84c53c57"spaces]]
+binding = "TEMPLATES"
 id       = "⚙️ prod_id"
 preview_id = "⚙️ dev_id"
 
