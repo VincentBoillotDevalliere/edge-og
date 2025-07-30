@@ -126,6 +126,95 @@ describe('Edge-OG Worker', () => {
 		});
 	});
 
+	describe('CG-2: Theme and Font Parameters with Fallbacks', () => {
+		it('accepts extended theme parameters', async () => {
+			const themes = ['light', 'dark', 'blue', 'green', 'purple'];
+			
+			for (const theme of themes) {
+				const searchParams = new URLSearchParams({
+					title: 'Test Title',
+					description: 'Test Description',
+					theme: theme,
+				});
+				
+				const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+				
+				expect(response.status).toBe(200);
+				expect(response.headers.get('Content-Type')).toBe('image/png');
+			}
+		});
+
+		it('accepts font parameters', async () => {
+			const fonts = ['inter', 'roboto', 'playfair', 'opensans'];
+			
+			for (const font of fonts) {
+				const searchParams = new URLSearchParams({
+					title: 'Test Title',
+					description: 'Test Description',
+					font: font,
+				});
+				
+				const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+				
+				expect(response.status).toBe(200);
+				expect(response.headers.get('Content-Type')).toBe('image/png');
+			}
+		});
+
+		it('validates font parameter', async () => {
+			const searchParams = new URLSearchParams({ font: 'invalid' });
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(400);
+			const data = await response.json() as any;
+			expect(data.error).toContain('Invalid font parameter');
+		});
+
+		it('combines theme and font parameters', async () => {
+			const searchParams = new URLSearchParams({
+				title: 'Test with Custom Theme and Font',
+				description: 'Testing CG-2 implementation',
+				theme: 'purple',
+				font: 'playfair',
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('image/png');
+			
+			// Verify response contains image data
+			const arrayBuffer = await response.arrayBuffer();
+			expect(arrayBuffer.byteLength).toBeGreaterThan(0);
+		});
+
+		it('validates extended theme parameter values', async () => {
+			const searchParams = new URLSearchParams({ theme: 'rainbow' }); // invalid
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(400);
+			const data = await response.json() as any;
+			expect(data.error).toContain('Invalid theme parameter. Must be one of: light, dark, blue, green, purple');
+		});
+	});
+
 	describe('Error handling', () => {
 		it('returns 404 for unknown routes', async () => {
 			const request = new IncomingRequest('https://example.com/unknown');

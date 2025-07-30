@@ -2,8 +2,64 @@ export {};
 
 /**
  * Default Open Graph template for CG-1
- * Working design with bundled Inter font
+ * Updated for CG-2: Support theme and font parameters with fallbacks
  */
+
+/**
+ * Get theme color configuration
+ * Implements CG-2: Extended theme support with fallbacks
+ */
+function getThemeColors(theme: 'light' | 'dark' | 'blue' | 'green' | 'purple') {
+  const themes = {
+    light: {
+      backgroundColor: '#ffffff',
+      textColor: '#1a1a1a',
+      accentColor: '#2563eb',
+      cardColor: '#f9fafb',
+    },
+    dark: {
+      backgroundColor: '#1a1a1a',
+      textColor: '#ffffff',
+      accentColor: '#3b82f6',
+      cardColor: '#374151',
+    },
+    blue: {
+      backgroundColor: '#dbeafe',
+      textColor: '#1e3a8a',
+      accentColor: '#1d4ed8',
+      cardColor: '#bfdbfe',
+    },
+    green: {
+      backgroundColor: '#dcfce7',
+      textColor: '#14532d',
+      accentColor: '#16a34a',
+      cardColor: '#bbf7d0',
+    },
+    purple: {
+      backgroundColor: '#f3e8ff',
+      textColor: '#581c87',
+      accentColor: '#9333ea',
+      cardColor: '#ddd6fe',
+    },
+  };
+
+  return themes[theme] || themes.light;
+}
+
+/**
+ * Get font family name for CSS
+ * Implements CG-2: Font selection with fallbacks
+ */
+function getFontFamily(font: 'inter' | 'roboto' | 'playfair' | 'opensans') {
+  const fonts = {
+    inter: 'Inter, sans-serif',
+    roboto: 'Roboto, sans-serif',
+    playfair: 'Playfair Display, serif',
+    opensans: 'Open Sans, sans-serif',
+  };
+
+  return fonts[font] || fonts.inter;
+}
 /**
  * Sanitize text for Satori rendering - remove problematic characters
  * Inter font from Google Fonts has good coverage, but we should be safe
@@ -25,14 +81,16 @@ export function DefaultTemplate({
   title = 'Edge-OG',
   description = 'Open Graph Generator at the Edge',
   theme = 'light',
+  font = 'inter',
 }: {
   title?: string;
   description?: string;
-  theme?: 'light' | 'dark';
+  theme?: 'light' | 'dark' | 'blue' | 'green' | 'purple';
+  font?: 'inter' | 'roboto' | 'playfair' | 'opensans';
 }) {
-  const backgroundColor = theme === 'dark' ? '#1a1a1a' : '#ffffff';
-  const textColor = theme === 'dark' ? '#ffffff' : '#1a1a1a';
-  const accentColor = theme === 'dark' ? '#3b82f6' : '#2563eb';
+  // Theme color configurations - extended for CG-2
+  const themeColors = getThemeColors(theme);
+  const fontFamily = getFontFamily(font);
 
   // Sanitize and prepare text values
   const safeTitle = sanitizeText(title || 'Edge-OG').substring(0, 60);
@@ -48,8 +106,8 @@ export function DefaultTemplate({
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor,
-        fontFamily: 'Inter, sans-serif',
+        backgroundColor: themeColors.backgroundColor,
+        fontFamily: fontFamily,
         padding: '80px',
       },
       children: [
@@ -62,7 +120,7 @@ export function DefaultTemplate({
               flexDirection: 'column',
               alignItems: 'center',
               textAlign: 'center',
-              backgroundColor: theme === 'dark' ? '#374151' : '#f9fafb',
+              backgroundColor: themeColors.cardColor,
               padding: '60px',
               borderRadius: '24px',
               boxShadow: theme === 'dark' ? '0 25px 50px rgba(0, 0, 0, 0.5)' : '0 25px 50px rgba(0, 0, 0, 0.1)',
@@ -76,7 +134,7 @@ export function DefaultTemplate({
                   style: {
                     width: '80px',
                     height: '80px',
-                    backgroundColor: accentColor,
+                    backgroundColor: themeColors.accentColor,
                     borderRadius: '16px',
                     marginBottom: '32px',
                     display: 'flex',
@@ -105,7 +163,7 @@ export function DefaultTemplate({
                   style: {
                     fontSize: '48px',
                     fontWeight: '700',
-                    color: textColor,
+                    color: themeColors.textColor,
                     lineHeight: '1.2',
                     marginBottom: '16px',
                     wordWrap: 'break-word',
@@ -119,7 +177,7 @@ export function DefaultTemplate({
                 props: {
                   style: {
                     fontSize: '20px',
-                    color: textColor,
+                    color: themeColors.textColor,
                     opacity: 0.7,
                     lineHeight: '1.5',
                     maxWidth: '500px',

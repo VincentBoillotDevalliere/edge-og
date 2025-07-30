@@ -19,7 +19,7 @@
 | ID | User Story | Critères d’acceptation | Priorité |
 |----|-----------|------------------------|----------|
 | **CG‑1** | En tant que *crawler* je reçois une image PNG 1200×630 <150 ms | `Content‑Type: image/png`, TTFB ≤ 150 ms | **Must** |
-| CG‑2 | En tant que dev je paramètre couleur, police, emoji via querystring | Champs `theme`, `font`, `emoji` avec valeurs de repli | Must |
+| CG‑2 | En tant que dev je paramètre couleur, police | Champs `theme`, `font` avec valeurs de repli | Must |
 | CG‑3 | En tant que PM je dispose de 10 templates JSX prêts | 10 fichiers prêts dans `templates/` + doc de rendu | Should |
 | CG‑4 | En tant qu’utilisateur avancé je charge une police custom via URL | `fontUrl` accepte TTF/OTF public, mise en cache | Could |
 
@@ -111,6 +111,6 @@
 | **Hit ratio cache** | ≥ 90 % |
 | **Taux conversion Beta → Starter** | ≥ 10 % |
 
----
 
-> Copiez-collez ce Markdown dans votre dépôt (`ROADMAP.md`), puis ouvrez des issues GitHub liées aux IDs de user stories pour un suivi clair par l’équipe.
+### Unitests
+Please make sure to unitest all the methods you implemented in the 

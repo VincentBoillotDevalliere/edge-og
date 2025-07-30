@@ -122,6 +122,7 @@ async function handleOGImageGeneration(
 		request_id: requestId,
 		template: params.template || 'default',
 		theme: params.theme || 'light',
+		font: params.font || 'inter',
 		format: params.format || 'png',
 		actual_format: resultIsSvg ? 'svg' : 'png',
 		fallback_occurred: fallbackOccurred,
@@ -156,17 +157,20 @@ async function handleOGImageGeneration(
 /**
  * Validate and sanitize Open Graph parameters
  * As per security requirements: validate all query params, max 200 chars decoded UTF-8
+ * Implements CG-2: Theme and font parameters with fallback values
  */
 function validateOGParams(searchParams: URLSearchParams): {
 	title?: string;
 	description?: string;
-	theme?: 'light' | 'dark';
+	theme?: 'light' | 'dark' | 'blue' | 'green' | 'purple';
+	font?: 'inter' | 'roboto' | 'playfair' | 'opensans';
 	template?: string;
 	format?: 'png' | 'svg';
 } {
 	const title = searchParams.get('title');
 	const description = searchParams.get('description');
 	const theme = searchParams.get('theme');
+	const font = searchParams.get('font');
 	const template = searchParams.get('template');
 	const format = searchParams.get('format');
 
@@ -179,10 +183,16 @@ function validateOGParams(searchParams: URLSearchParams): {
 		throw new WorkerError('Description parameter too long (max 200 characters)', 400);
 	}
 
-	// Validate theme parameter
-	const validThemes = ['light', 'dark'];
+	// Validate theme parameter - extended color themes with fallback to 'light'
+	const validThemes = ['light', 'dark', 'blue', 'green', 'purple'];
 	if (theme && !validThemes.includes(theme)) {
-		throw new WorkerError('Invalid theme parameter. Must be "light" or "dark"', 400);
+		throw new WorkerError('Invalid theme parameter. Must be one of: light, dark, blue, green, purple', 400);
+	}
+
+	// Validate font parameter - supported fonts with fallback to 'inter'
+	const validFonts = ['inter', 'roboto', 'playfair', 'opensans'];
+	if (font && !validFonts.includes(font)) {
+		throw new WorkerError('Invalid font parameter. Must be one of: inter, roboto, playfair, opensans', 400);
 	}
 
 	// Validate format parameter (development use)
@@ -199,7 +209,8 @@ function validateOGParams(searchParams: URLSearchParams): {
 	return {
 		title: title || undefined,
 		description: description || undefined,
-		theme: (theme as 'light' | 'dark') || undefined,
+		theme: (theme as 'light' | 'dark' | 'blue' | 'green' | 'purple') || undefined,
+		font: (font as 'inter' | 'roboto' | 'playfair' | 'opensans') || undefined,
 		template: template || undefined,
 		format: (format as 'png' | 'svg') || undefined,
 	};
