@@ -111,6 +111,11 @@ async function handleOGImageGeneration(
 	// Measure render time for performance monitoring
 	const renderDuration = Math.round(performance.now() - startRender);
 
+	// Determine if result is SVG or PNG
+	const resultIsSvg = typeof result === 'string';
+	const requestedPng = params.format !== 'svg';
+	const fallbackOccurred = requestedPng && resultIsSvg;
+
 	log({
 		event: 'image_rendered',
 		duration_ms: renderDuration,
@@ -118,23 +123,33 @@ async function handleOGImageGeneration(
 		template: params.template || 'default',
 		theme: params.theme || 'light',
 		format: params.format || 'png',
+		actual_format: resultIsSvg ? 'svg' : 'png',
+		fallback_occurred: fallbackOccurred,
 	});
 
-	// Determine content type and response
-	const issvg = params.format === 'svg';
-	const contentType = issvg ? 'image/svg+xml' : 'image/png';
-	const responseBody = issvg ? result as string : result as ArrayBuffer;
+	// Determine content type and response body
+	const contentType = resultIsSvg ? 'image/svg+xml' : 'image/png';
+	const responseBody = resultIsSvg ? result as string : result as ArrayBuffer;
+
+	// Prepare response headers
+	const headers: Record<string, string> = {
+		'Content-Type': contentType,
+		'Cache-Control': 'public, immutable, max-age=31536000',
+		'X-Request-ID': requestId,
+		'X-Render-Time': `${renderDuration}ms`,
+	};
+
+	// Add fallback notification header for debugging
+	if (fallbackOccurred) {
+		headers['X-Fallback-To-SVG'] = 'true';
+		headers['X-Fallback-Reason'] = 'PNG conversion not available in development environment';
+	}
 
 	// Return with proper caching headers
 	// As per requirements: Cache-Control: public, immutable, max-age=31536000
 	return new Response(responseBody, {
 		status: 200,
-		headers: {
-			'Content-Type': contentType,
-			'Cache-Control': 'public, immutable, max-age=31536000',
-			'X-Request-ID': requestId,
-			'X-Render-Time': `${renderDuration}ms`,
-		},
+		headers,
 	});
 }
 

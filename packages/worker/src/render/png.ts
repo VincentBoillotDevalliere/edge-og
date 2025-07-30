@@ -4,28 +4,53 @@ import { Resvg, initWasm } from '@resvg/resvg-wasm';
 
 // Initialize WASM once globally
 let wasmInitialized = false;
+let wasmInitializationPromise: Promise<void> | null = null;
+let wasmUnavailable = false;
 
 async function ensureWasmInitialized() {
-  if (!wasmInitialized) {
+  if (wasmInitialized) {
+    return;
+  }
+
+  if (wasmUnavailable) {
+    throw new Error('WASM is not available in this environment. PNG conversion requires deployment to Cloudflare Workers production environment.');
+  }
+
+  if (wasmInitializationPromise) {
+    return wasmInitializationPromise;
+  }
+
+  wasmInitializationPromise = (async () => {
     try {
-      // For Cloudflare Workers, we need to load the WASM from a URL
-      // The WASM file should be available at a CDN or bundled
-      const wasmUrl = 'https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm';
-      const wasmResponse = await fetch(wasmUrl);
+      console.log('Initializing WASM for resvg...');
       
+      // Try to load WASM from unpkg CDN
+      const wasmUrl = 'https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm';
+      console.log('Fetching WASM from:', wasmUrl);
+      
+      const wasmResponse = await fetch(wasmUrl);
       if (!wasmResponse.ok) {
         throw new Error(`Failed to fetch WASM: ${wasmResponse.status}`);
       }
       
       const wasmBuffer = await wasmResponse.arrayBuffer();
+      console.log(`WASM loaded: ${wasmBuffer.byteLength} bytes`);
+      
+      // Initialize resvg with the WASM buffer
       await initWasm(wasmBuffer);
       wasmInitialized = true;
       console.log('WASM initialized successfully');
     } catch (error) {
       console.error('Failed to initialize WASM:', error);
-      throw error;
+      wasmUnavailable = true;
+      wasmInitializationPromise = null;
+      
+      // Always provide a helpful error message
+      throw new Error('PNG conversion is not available in local development due to WASM restrictions. Use format=svg for testing, or deploy to Cloudflare Workers for full PNG functionality.');
     }
-  }
+  })();
+
+  return wasmInitializationPromise;
 }
 
 /**

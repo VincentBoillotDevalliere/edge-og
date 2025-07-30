@@ -39,9 +39,9 @@ export async function generateSVG(
 // Font handling for Satori - using Google Fonts like the Satori playground
 async function getDefaultFonts(): Promise<SatoriOptions['fonts']> {
   try {
-    // Use the exact same approach as Satori's playground
-    // This fetches the CSS first to get the actual TTF URL
-    const API = `https://fonts.googleapis.com/css2?family=Inter:wght@400&text=Hello%20World`;
+    // Use the exact same approach as Satori's playground but with broader character support
+    // Include common characters and punctuation
+    const API = `https://fonts.googleapis.com/css2?family=Inter:wght@400;700&text=${encodeURIComponent('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,!?()-:;')}`;
     
     const css = await fetch(API, {
       headers: {
@@ -76,11 +76,19 @@ async function getDefaultFonts(): Promise<SatoriOptions['fonts']> {
     const fontData = await fontResponse.arrayBuffer();
     console.log(`Successfully loaded font: ${fontData.byteLength} bytes`);
 
+    // For now, we'll use the same font data for both weights
+    // This is a simplified approach for CG-1
     return [
       {
         name: 'Inter',
         data: fontData,
         weight: 400,
+        style: 'normal',
+      },
+      {
+        name: 'Inter',
+        data: fontData,
+        weight: 700,
         style: 'normal',
       },
     ];

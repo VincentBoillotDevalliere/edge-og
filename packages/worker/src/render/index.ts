@@ -14,8 +14,9 @@ export async function renderOpenGraphImage(params: {
   theme?: 'light' | 'dark';
   template?: string;
   format?: 'png' | 'svg'; // Development flag for testing
+  fallbackToSvg?: boolean; // Auto-fallback when PNG fails
 }): Promise<ArrayBuffer | string> {
-  const { title, description, theme = 'light', template = 'default', format = 'png' } = params;
+  const { title, description, theme = 'light', template = 'default', format = 'png', fallbackToSvg = true } = params;
 
   // For CG-1, we only support the default template
   if (template !== 'default') {
@@ -32,13 +33,24 @@ export async function renderOpenGraphImage(params: {
     fonts: [], // getDefaultFonts() will be called inside generateSVG
   });
 
-  // Development mode: return SVG for testing
+  // Return SVG if requested
   if (format === 'svg') {
     return svg;
   }
 
-  // Step 2: Convert SVG to PNG using resvg
-  const pngBuffer = await svgToPng(svg);
-
-  return pngBuffer;
+  // Step 2: Try to convert SVG to PNG using resvg
+  try {
+    const pngBuffer = await svgToPng(svg);
+    return pngBuffer;
+  } catch (error) {
+    console.warn('PNG conversion failed, details:', error instanceof Error ? error.message : String(error));
+    
+    if (fallbackToSvg) {
+      console.log('Falling back to SVG format due to PNG conversion failure');
+      return svg;
+    } else {
+      // Re-throw the error if fallback is disabled
+      throw error;
+    }
+  }
 }
