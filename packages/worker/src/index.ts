@@ -10,6 +10,7 @@ export {};
 import { renderOpenGraphImage } from './render';
 import { WorkerError } from './utils/error';
 import { log, logRequest } from './utils/logger';
+import { TemplateType } from './templates';
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -164,8 +165,24 @@ function validateOGParams(searchParams: URLSearchParams): {
 	description?: string;
 	theme?: 'light' | 'dark' | 'blue' | 'green' | 'purple';
 	font?: 'inter' | 'roboto' | 'playfair' | 'opensans';
-	template?: string;
+	template?: TemplateType;
 	format?: 'png' | 'svg';
+	// Template-specific parameters
+	author?: string;
+	price?: string;
+	date?: string;
+	location?: string;
+	quote?: string;
+	role?: string;
+	subtitle?: string;
+	category?: string;
+	version?: string;
+	status?: string;
+	episode?: string;
+	duration?: string;
+	name?: string;
+	instructor?: string;
+	level?: string;
 } {
 	const title = searchParams.get('title');
 	const description = searchParams.get('description');
@@ -173,6 +190,23 @@ function validateOGParams(searchParams: URLSearchParams): {
 	const font = searchParams.get('font');
 	const template = searchParams.get('template');
 	const format = searchParams.get('format');
+	
+	// Extract template-specific parameters
+	const author = searchParams.get('author');
+	const price = searchParams.get('price');
+	const date = searchParams.get('date');
+	const location = searchParams.get('location');
+	const quote = searchParams.get('quote');
+	const role = searchParams.get('role');
+	const subtitle = searchParams.get('subtitle');
+	const category = searchParams.get('category');
+	const version = searchParams.get('version');
+	const status = searchParams.get('status');
+	const episode = searchParams.get('episode');
+	const duration = searchParams.get('duration');
+	const name = searchParams.get('name');
+	const instructor = searchParams.get('instructor');
+	const level = searchParams.get('level');
 
 	// Validate text length (max 200 chars as per security requirements)
 	if (title && title.length > 200) {
@@ -201,9 +235,10 @@ function validateOGParams(searchParams: URLSearchParams): {
 		throw new WorkerError('Invalid format parameter. Must be "png" or "svg"', 400);
 	}
 
-	// For CG-1, only default template is supported
-	if (template && template !== 'default') {
-		throw new WorkerError('Only "default" template is supported in this version', 400);
+	// CG-3: Validate template parameter - support all 10 templates
+	const validTemplates = ['default', 'blog', 'product', 'event', 'quote', 'minimal', 'news', 'tech', 'podcast', 'portfolio', 'course'];
+	if (template && !validTemplates.includes(template)) {
+		throw new WorkerError(`Invalid template parameter. Must be one of: ${validTemplates.join(', ')}`, 400);
 	}
 
 	return {
@@ -211,7 +246,23 @@ function validateOGParams(searchParams: URLSearchParams): {
 		description: description || undefined,
 		theme: (theme as 'light' | 'dark' | 'blue' | 'green' | 'purple') || undefined,
 		font: (font as 'inter' | 'roboto' | 'playfair' | 'opensans') || undefined,
-		template: template || undefined,
+		template: (template as TemplateType) || undefined,
 		format: (format as 'png' | 'svg') || undefined,
+		// Template-specific parameters
+		author: author || undefined,
+		price: price || undefined,
+		date: date || undefined,
+		location: location || undefined,
+		quote: quote || undefined,
+		role: role || undefined,
+		subtitle: subtitle || undefined,
+		category: category || undefined,
+		version: version || undefined,
+		status: status || undefined,
+		episode: episode || undefined,
+		duration: duration || undefined,
+		name: name || undefined,
+		instructor: instructor || undefined,
+		level: level || undefined,
 	};
 }

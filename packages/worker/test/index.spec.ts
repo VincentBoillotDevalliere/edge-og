@@ -1,5 +1,30 @@
 import { env, createExecutionContext, waitOnExecutionContext, SELF } from 'cloudflare:test';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
+
+// Mock render dependencies before any imports
+vi.hoisted(() => {
+	// Mock the render function to avoid Satori dependency issues
+	const mockRenderOpenGraphImage = vi.fn().mockImplementation(async (params) => {
+		// Return a fake PNG buffer for testing
+		const fakeImage = new ArrayBuffer(1000);
+		const view = new Uint8Array(fakeImage);
+		// Add PNG signature
+		view[0] = 137; view[1] = 80; view[2] = 78; view[3] = 71;
+		view[4] = 13; view[5] = 10; view[6] = 26; view[7] = 10;
+		return fakeImage;
+	});
+
+	// Mock modules that cause CommonJS issues
+	vi.doMock('../src/render', () => ({
+		renderOpenGraphImage: mockRenderOpenGraphImage,
+	}));
+
+	vi.doMock('satori', () => ({ default: vi.fn() }));
+	vi.doMock('@resvg/resvg-wasm', () => ({ Resvg: vi.fn(), initWasm: vi.fn() }));
+	vi.doMock('css-color-keywords', () => ({}));
+	vi.doMock('css-to-react-native', () => ({ default: vi.fn() }));
+});
+
 import worker from '../src/index';
 
 // For now, you'll need to do something like this to get a correctly-typed
@@ -212,6 +237,92 @@ describe('Edge-OG Worker', () => {
 			expect(response.status).toBe(400);
 			const data = await response.json() as any;
 			expect(data.error).toContain('Invalid theme parameter. Must be one of: light, dark, blue, green, purple');
+		});
+	});
+
+	describe('CG-3: Template Support', () => {
+		it('accepts all template types', async () => {
+			const templates = [
+				'default', 'blog', 'product', 'event', 'quote', 
+				'minimal', 'news', 'tech', 'podcast', 'portfolio', 'course'
+			];
+			
+			for (const template of templates) {
+				const searchParams = new URLSearchParams({
+					title: `Test ${template} Template`,
+					description: 'Testing template functionality',
+					template: template,
+				});
+				
+				const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+				
+				expect(response.status).toBe(200);
+				expect(response.headers.get('Content-Type')).toBe('image/png');
+			}
+		});
+
+		it('validates template parameter', async () => {
+			const searchParams = new URLSearchParams({ template: 'invalid' });
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(400);
+			const data = await response.json() as any;
+			expect(data.error).toContain('Invalid template parameter');
+		});
+
+		it('accepts template-specific parameters', async () => {
+			// Test blog template with author
+			const blogParams = new URLSearchParams({
+				title: 'My Blog Post',
+				description: 'An amazing article',
+				template: 'blog',
+				author: 'John Doe',
+			});
+			
+			const blogRequest = new IncomingRequest(`https://example.com/og?${blogParams}`);
+			const blogCtx = createExecutionContext();
+			const blogResponse = await worker.fetch(blogRequest, env, blogCtx);
+			await waitOnExecutionContext(blogCtx);
+			
+			expect(blogResponse.status).toBe(200);
+
+			// Test product template with price
+			const productParams = new URLSearchParams({
+				title: 'Amazing Product',
+				description: 'The best product ever',
+				template: 'product',
+				price: '$99.99',
+			});
+			
+			const productRequest = new IncomingRequest(`https://example.com/og?${productParams}`);
+			const productCtx = createExecutionContext();
+			const productResponse = await worker.fetch(productRequest, env, productCtx);
+			await waitOnExecutionContext(productCtx);
+			
+			expect(productResponse.status).toBe(200);
+		});
+
+		it('falls back to default template when not specified', async () => {
+			const searchParams = new URLSearchParams({
+				title: 'Test Title',
+				description: 'Test Description',
+				// No template specified - should use default
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('image/png');
 		});
 	});
 

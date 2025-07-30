@@ -2,31 +2,159 @@ export {};
 
 import { generateSVG, getFontsByName } from './svg';
 import { svgToPng } from './png';
-import { DefaultTemplate } from '../templates/default';
+import {
+  DefaultTemplate,
+  BlogTemplate,
+  ProductTemplate,
+  EventTemplate,
+  QuoteTemplate,
+  MinimalTemplate,
+  NewsTemplate,
+  TechTemplate,
+  PodcastTemplate,
+  PortfolioTemplate,
+  CourseTemplate,
+  TEMPLATE_REGISTRY,
+  type TemplateType,
+} from '../templates';
 
 /**
  * Main render pipeline: JSX → Satori → SVG → resvg → PNG
  * Implements the exact pipeline specified in instructions
  * Updated for CG-2: Support theme and font parameters with fallbacks
+ * Updated for CG-3: Support all 10 templates
  */
 export async function renderOpenGraphImage(params: {
   title?: string;
   description?: string;
   theme?: 'light' | 'dark' | 'blue' | 'green' | 'purple';
   font?: 'inter' | 'roboto' | 'playfair' | 'opensans';
-  template?: string;
+  template?: TemplateType;
   format?: 'png' | 'svg'; // Development flag for testing
   fallbackToSvg?: boolean; // Auto-fallback when PNG fails
+  // Template-specific parameters
+  author?: string;
+  price?: string;
+  date?: string;
+  location?: string;
+  quote?: string;
+  role?: string;
+  subtitle?: string;
+  category?: string;
+  version?: string;
+  status?: string;
+  episode?: string;
+  duration?: string;
+  name?: string;
+  instructor?: string;
+  level?: string;
 }): Promise<ArrayBuffer | string> {
-  const { title, description, theme = 'light', font = 'inter', template = 'default', format = 'png', fallbackToSvg = true } = params;
+  const { 
+    title, 
+    description, 
+    theme = 'light', 
+    font = 'inter', 
+    template = 'default', 
+    format = 'png', 
+    fallbackToSvg = true,
+    // Template-specific params
+    ...templateSpecificParams
+  } = params;
 
-  // For CG-1, we only support the default template
-  if (template !== 'default') {
-    throw new Error(`Template "${template}" not supported yet`);
+  // Generate the React element based on selected template
+  let element;
+  
+  switch (template) {
+    case 'blog':
+      element = BlogTemplate({ title, description, theme, font, author: templateSpecificParams.author });
+      break;
+    case 'product':
+      element = ProductTemplate({ title, description, theme, font, price: templateSpecificParams.price });
+      break;
+    case 'event':
+      element = EventTemplate({ 
+        title, 
+        description, 
+        theme, 
+        font, 
+        date: templateSpecificParams.date,
+        location: templateSpecificParams.location 
+      });
+      break;
+    case 'quote':
+      element = QuoteTemplate({ 
+        title, 
+        quote: templateSpecificParams.quote || description, 
+        theme, 
+        font, 
+        author: templateSpecificParams.author,
+        role: templateSpecificParams.role 
+      });
+      break;
+    case 'minimal':
+      element = MinimalTemplate({ 
+        title, 
+        subtitle: templateSpecificParams.subtitle || description, 
+        theme, 
+        font 
+      });
+      break;
+    case 'news':
+      element = NewsTemplate({ 
+        title, 
+        description, 
+        theme, 
+        font, 
+        category: templateSpecificParams.category,
+        date: templateSpecificParams.date 
+      });
+      break;
+    case 'tech':
+      element = TechTemplate({ 
+        title, 
+        description, 
+        theme, 
+        font, 
+        version: templateSpecificParams.version,
+        status: templateSpecificParams.status 
+      });
+      break;
+    case 'podcast':
+      element = PodcastTemplate({ 
+        title, 
+        description, 
+        theme, 
+        font, 
+        episode: templateSpecificParams.episode,
+        duration: templateSpecificParams.duration 
+      });
+      break;
+    case 'portfolio':
+      element = PortfolioTemplate({ 
+        title, 
+        description, 
+        theme, 
+        font, 
+        name: templateSpecificParams.name,
+        role: templateSpecificParams.role 
+      });
+      break;
+    case 'course':
+      element = CourseTemplate({ 
+        title, 
+        description, 
+        theme, 
+        font, 
+        instructor: templateSpecificParams.instructor,
+        duration: templateSpecificParams.duration,
+        level: templateSpecificParams.level 
+      });
+      break;
+    case 'default':
+    default:
+      element = DefaultTemplate({ title, description, theme, font });
+      break;
   }
-
-  // Generate the React element with theme and font
-  const element = DefaultTemplate({ title, description, theme, font });
 
   // Step 1: Generate SVG using Satori with the selected font
   const svg = await generateSVG(element, {
