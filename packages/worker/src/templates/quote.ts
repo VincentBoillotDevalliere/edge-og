@@ -5,7 +5,7 @@ export {};
  * Optimized for showcasing testimonials and quotes
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils';
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from './utils';
 
 export function QuoteTemplate({
   title = 'Customer Success Story',
@@ -26,6 +26,7 @@ export function QuoteTemplate({
 }) {
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
+  const templateEmoji = getTemplateEmoji('quote'); // CG-5: Add emoji support
 
   const safeTitle = sanitizeText(title).substring(0, 60);
   // Use description if provided, otherwise fall back to quote
@@ -78,8 +79,28 @@ export function QuoteTemplate({
               marginBottom: '48px',
               maxWidth: '800px',
               fontStyle: font === 'playfair' ? 'italic' : 'normal',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '16px',
             },
-            children: safeQuote,
+            children: [
+              {
+                type: 'span',
+                props: {
+                  style: {
+                    fontSize: '32px',
+                    opacity: 0.7,
+                  },
+                  children: templateEmoji.accent, // CG-5: Add accent emoji
+                },
+              },
+              {
+                type: 'span',
+                props: {
+                  children: safeQuote,
+                },
+              },
+            ],
           },
         },
         // Attribution
@@ -162,7 +183,7 @@ export function QuoteTemplate({
                           fontSize: '14px',
                           fontWeight: '700',
                         },
-                        children: 'OG',
+                        children: templateEmoji.icon, // CG-5: Use emoji instead of 'OG'
                       },
                     },
                   ],

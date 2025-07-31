@@ -5,7 +5,7 @@ export {};
  * Optimized for showcasing creative work and portfolios
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils';
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from './utils';
 
 export function PortfolioTemplate({
   title = 'Creative Portfolio',
@@ -24,6 +24,7 @@ export function PortfolioTemplate({
 }) {
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
+  const templateEmoji = getTemplateEmoji('portfolio'); // CG-5: Add emoji support
 
   const safeTitle = sanitizeText(title).substring(0, 60);
   const safeDescription = sanitizeText(description).substring(0, 100);
@@ -131,8 +132,27 @@ export function PortfolioTemplate({
                           lineHeight: '1.1',
                           marginBottom: '24px',
                           fontStyle: font === 'playfair' ? 'italic' : 'normal',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '16px',
                         },
-                        children: safeTitle,
+                        children: [
+                          {
+                            type: 'span',
+                            props: {
+                              children: safeTitle,
+                            },
+                          },
+                          {
+                            type: 'span',
+                            props: {
+                              style: {
+                                fontSize: '42px',
+                              },
+                              children: templateEmoji.accent, // CG-5: Add accent emoji
+                            },
+                          },
+                        ],
                       },
                     },
                     {
@@ -199,7 +219,23 @@ export function PortfolioTemplate({
                           backgroundColor: themeColors.accentColor,
                           borderRadius: '8px',
                           opacity: 0.9,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                         },
+                        children: [
+                          {
+                            type: 'div',
+                            props: {
+                              style: {
+                                color: 'white',
+                                fontSize: '32px',
+                                fontWeight: '600',
+                              },
+                              children: templateEmoji.icon, // CG-5: Add emoji to portfolio grid
+                            },
+                          },
+                        ],
                       },
                     },
                     {

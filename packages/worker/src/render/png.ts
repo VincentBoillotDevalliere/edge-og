@@ -45,8 +45,17 @@ async function ensureWasmInitialized() {
       wasmUnavailable = true;
       wasmInitializationPromise = null;
       
-      // Always provide a helpful error message
-      throw new Error('PNG conversion is not available in local development due to WASM restrictions. Use format=svg for testing, or deploy to Cloudflare Workers for full PNG functionality.');
+      // Check if this is a WebAssembly compilation error (common in local dev)
+      if (error instanceof Error && (
+        error.message.includes('CompileError') || 
+        error.message.includes('Wasm code generation disallowed') ||
+        error.name === 'CompileError'
+      )) {
+        throw new Error('PNG conversion is not available in local development due to WASM restrictions. Use format=svg for testing, or deploy to Cloudflare Workers for full PNG functionality.');
+      }
+      
+      // Always provide a helpful error message for other WASM errors
+      throw new Error(`PNG conversion failed to initialize: ${error instanceof Error ? error.message : 'Unknown WASM error'}. Use format=svg for testing, or deploy to Cloudflare Workers for full PNG functionality.`);
     }
   })();
 

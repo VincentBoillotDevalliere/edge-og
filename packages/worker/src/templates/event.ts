@@ -2,10 +2,38 @@ export {};
 
 /**
  * Event announcement template for CG-3
- * Optimized for conferences, webinars, and events
+ * Optimized for conferences, webinar                  style: {
+                    fontSize: '64px',
+                    fontWeight: '800',
+                    color: themeColors.textColor,
+                    lineHeight: '1.1',
+                    marginBottom: '20px',
+                    maxWidth: '800px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                  },
+                  children: [
+                    {
+                      type: 'span',
+                      props: {
+                        children: safeTitle,
+                      },
+                    },
+                    {
+                      type: 'span',
+                      props: {
+                        style: {
+                          fontSize: '48px',
+                        },
+                        children: templateEmoji.accent, // CG-5: Add accent emoji
+                      },
+                    },
+                  ],ents
+ * Updated for CG-5: Added emoji support for more attractive templates
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils';
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from './utils';
 
 export function EventTemplate({
   title = 'Join Our Event',
@@ -24,6 +52,7 @@ export function EventTemplate({
 }) {
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
+  const templateEmoji = getTemplateEmoji('event'); // CG-5: Add emoji support
 
   const safeTitle = sanitizeText(title).substring(0, 70);
   const safeDescription = sanitizeText(description).substring(0, 100);
@@ -67,7 +96,7 @@ export function EventTemplate({
                     textTransform: 'uppercase',
                     letterSpacing: '1px',
                   },
-                  children: 'EVENT',
+                  children: [templateEmoji.icon, ' EVENT'].join(' '), // CG-5: Add emoji to EVENT label
                 },
               },
             ],

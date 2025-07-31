@@ -5,7 +5,7 @@ export {};
  * Optimized for podcast episodes and audio content
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils';
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from './utils';
 
 export function PodcastTemplate({
   title = 'Podcast Episode',
@@ -24,6 +24,7 @@ export function PodcastTemplate({
 }) {
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
+  const templateEmoji = getTemplateEmoji('podcast'); // CG-5: Add emoji support
 
   const safeTitle = sanitizeText(title).substring(0, 70);
   const safeDescription = sanitizeText(description).substring(0, 110);
@@ -82,8 +83,27 @@ export function PodcastTemplate({
                     color: themeColors.textColor,
                     lineHeight: '1.2',
                     marginBottom: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
                   },
-                  children: safeTitle,
+                  children: [
+                    {
+                      type: 'span',
+                      props: {
+                        children: safeTitle,
+                      },
+                    },
+                    {
+                      type: 'span',
+                      props: {
+                        style: {
+                          fontSize: '36px',
+                        },
+                        children: templateEmoji.accent, // CG-5: Add accent emoji
+                      },
+                    },
+                  ],
                 },
               },
               // Description
@@ -131,7 +151,7 @@ export function PodcastTemplate({
                                 fontSize: '24px',
                                 marginLeft: '4px',
                               },
-                              children: '▶',
+                              children: templateEmoji.icon, // CG-5: Use emoji instead of empty string
                             },
                           },
                         ],

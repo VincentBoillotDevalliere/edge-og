@@ -3,9 +3,10 @@ export {};
 /**
  * Course/Education template for CG-3
  * Optimized for online courses and educational content
+ * Updated for CG-5: Added emoji support for more attractive templates
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils';
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from './utils';
 
 export function CourseTemplate({
   title = 'Master the Fundamentals',
@@ -26,6 +27,7 @@ export function CourseTemplate({
 }) {
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
+  const templateEmoji = getTemplateEmoji('course'); // CG-5: Add emoji support
 
   const safeTitle = sanitizeText(title).substring(0, 70);
   const safeDescription = sanitizeText(description).substring(0, 100);
@@ -118,8 +120,27 @@ export function CourseTemplate({
                           color: themeColors.textColor,
                           lineHeight: '1.1',
                           marginBottom: '24px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '16px',
                         },
-                        children: safeTitle,
+                        children: [
+                          {
+                            type: 'span',
+                            props: {
+                              children: safeTitle,
+                            },
+                          },
+                          {
+                            type: 'span',
+                            props: {
+                              style: {
+                                fontSize: '40px',
+                              },
+                              children: templateEmoji.accent, // CG-5: Add accent emoji
+                            },
+                          },
+                        ],
                       },
                     },
                     {
@@ -167,7 +188,7 @@ export function CourseTemplate({
                                       fontSize: '20px',
                                       fontWeight: '600',
                                     },
-                                    children: safeInstructor.charAt(0).toUpperCase(),
+                                    children: templateEmoji.icon, // CG-5: Use emoji instead of instructor initial
                                   },
                                 },
                               ],

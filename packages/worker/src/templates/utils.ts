@@ -75,6 +75,7 @@ export function getFontFamily(font: 'inter' | 'roboto' | 'playfair' | 'opensans'
 
 /**
  * Sanitize text for Satori rendering - remove problematic characters
+ * CG-5: Updated to preserve emojis and special characters for more attractive templates
  * Inter font from Google Fonts has good coverage, but we should be safe
  */
 export function sanitizeText(text: string): string {
@@ -83,10 +84,62 @@ export function sanitizeText(text: string): string {
   return text
     .replace(/<\/([^>]*)>/g, ' $1 ') // Replace closing tags like </script> with " script "
     .replace(/<([^>]*)>/g, ' $1 ') // Replace opening tags like <script> with " script "
-    .replace(/[<>&"']/g, ' ') // Remove remaining HTML characters
+    .replace(/[<>"']/g, ' ') // Remove HTML characters but preserve & for special characters
     .replace(/[\u0000-\u001F\u007F]/g, '') // Remove control characters and DEL
-    .normalize('NFD') // Decompose accented characters
-    .replace(/[\u0300-\u036f]/g, '') // Remove accent marks
+    // CG-5: Preserve emojis and special characters - removed accent stripping
     .replace(/\s+/g, ' ') // Normalize whitespace
     .trim();
+}
+
+/**
+ * CG-5: Get template-specific emoji decorations
+ * Returns appropriate emojis for different template types
+ * Includes fallback text representations for better Satori compatibility
+ */
+export function getTemplateEmoji(template: string): { icon: string; accent?: string } {
+  const emojiMap = {
+    blog: { icon: '📝', accent: '✨' },
+    product: { icon: '🚀', accent: '💫' },
+    event: { icon: '🎯', accent: '📅' },
+    quote: { icon: '💬', accent: '⭐' },
+    minimal: { icon: '✨', accent: '◦' },
+    news: { icon: '📰', accent: '🔥' },
+    tech: { icon: '⚡', accent: '🔧' },
+    podcast: { icon: '🎧', accent: '🎙️' },
+    portfolio: { icon: '🎨', accent: '✨' },
+    course: { icon: '📚', accent: '🎓' },
+    default: { icon: '🌟', accent: '✨' },
+  };
+
+  return emojiMap[template as keyof typeof emojiMap] || emojiMap.default;
+}
+
+/**
+ * CG-5: Convert emoji to text fallback for better Satori compatibility
+ * Provides text alternatives when emoji rendering fails
+ */
+export function getEmojiTextFallback(emoji: string): string {
+  const fallbackMap: Record<string, string> = {
+    '🔥': 'FIRE',
+    '🚀': 'ROCKET',
+    '💫': 'STAR',
+    '⭐': 'STAR',
+    '✨': 'SPARK',
+    '🎯': 'TARGET',
+    '💬': 'CHAT',
+    '📝': 'WRITE',
+    '📰': 'NEWS',
+    '⚡': 'BOLT',
+    '🔧': 'TOOL',
+    '🎧': 'AUDIO',
+    '🎙️': 'MIC',
+    '🎨': 'ART',
+    '📚': 'BOOK',
+    '🎓': 'GRAD',
+    '🌟': 'STAR',
+    '📅': 'DATE',
+    '◦': '•',
+  };
+
+  return fallbackMap[emoji] || emoji.substring(0, 1).toUpperCase();
 }

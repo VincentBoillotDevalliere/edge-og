@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getThemeColors, getFontFamily, sanitizeText } from '../src/templates/utils';
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from '../src/templates/utils';
 
 describe('Template Utilities (CG-3)', () => {
 	describe('getThemeColors', () => {
@@ -56,7 +56,16 @@ describe('Template Utilities (CG-3)', () => {
 		it('sanitizes text correctly', () => {
 			expect(sanitizeText('Hello World')).toBe('Hello World');
 			expect(sanitizeText('Hello<script>alert("xss")</script>')).toBe('Hello script alert( xss ) script');
-			expect(sanitizeText('Café')).toBe('Cafe');
+			// CG-5: Updated to preserve special characters and accents for more attractive templates
+			expect(sanitizeText('Café')).toBe('Café');
+		});
+
+		it('preserves emojis and special characters (CG-5)', () => {
+			// CG-5: Verify that emojis and special characters are preserved
+			expect(sanitizeText('Hello 🌟 World')).toBe('Hello 🌟 World');
+			expect(sanitizeText('Product 🚀 Launch')).toBe('Product 🚀 Launch');
+			expect(sanitizeText('Event 🎯 2024')).toBe('Event 🎯 2024');
+			expect(sanitizeText('Café & Restaurant')).toBe('Café & Restaurant');
 		});
 
 		it('handles empty input', () => {
@@ -138,5 +147,26 @@ describe('Template Generation (CG-3)', () => {
 			location: 'Online' 
 		});
 		expect(eventResult.type).toBe('div');
+	});
+
+	describe('getTemplateEmoji (CG-5)', () => {
+		it('returns appropriate emojis for each template type', () => {
+			expect(getTemplateEmoji('blog')).toEqual({ icon: '📝', accent: '✨' });
+			expect(getTemplateEmoji('product')).toEqual({ icon: '🚀', accent: '💫' });
+			expect(getTemplateEmoji('event')).toEqual({ icon: '🎯', accent: '📅' });
+			expect(getTemplateEmoji('quote')).toEqual({ icon: '💬', accent: '⭐' });
+			expect(getTemplateEmoji('minimal')).toEqual({ icon: '✨', accent: '◦' });
+			expect(getTemplateEmoji('news')).toEqual({ icon: '📰', accent: '🔥' });
+			expect(getTemplateEmoji('tech')).toEqual({ icon: '⚡', accent: '🔧' });
+			expect(getTemplateEmoji('podcast')).toEqual({ icon: '🎧', accent: '🎙️' });
+			expect(getTemplateEmoji('portfolio')).toEqual({ icon: '🎨', accent: '✨' });
+			expect(getTemplateEmoji('course')).toEqual({ icon: '📚', accent: '🎓' });
+			expect(getTemplateEmoji('default')).toEqual({ icon: '🌟', accent: '✨' });
+		});
+
+		it('falls back to default emoji for unknown template types', () => {
+			expect(getTemplateEmoji('unknown')).toEqual({ icon: '🌟', accent: '✨' });
+			expect(getTemplateEmoji('')).toEqual({ icon: '🌟', accent: '✨' });
+		});
 	});
 });

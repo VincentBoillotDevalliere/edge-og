@@ -48,6 +48,18 @@ export async function generateSVG(
       width,
       height,
       fonts: defaultFonts,
+      // CG-5: Add comprehensive emoji support
+      graphemeImages: getEmojiGraphemes(),
+      loadAdditionalAsset: async (code: string, segment: string) => {
+        if (code === 'emoji') {
+          // Convert emoji to Unicode hex for Twemoji URL
+          const emojiHex = getEmojiHex(segment);
+          if (emojiHex) {
+            return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/${emojiHex}.svg`;
+          }
+        }
+        return '';
+      },
     });
 
     return svg;
@@ -206,4 +218,55 @@ async function loadFont(config: { family: string; url: string }): Promise<Satori
       style: 'normal',
     },
   ];
+}
+
+/**
+ * Get predefined emoji grapheme mappings for CG-5
+ * Maps common emojis to their Twemoji SVG URLs
+ */
+function getEmojiGraphemes(): Record<string, string> {
+  return {
+    '🔥': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f525.svg',
+    '🚀': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f680.svg',
+    '⭐': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/2b50.svg',
+    '💫': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4ab.svg',
+    '💬': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4ac.svg',
+    '📰': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4f0.svg',
+    '🎭': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f3ad.svg',
+    '📖': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4d6.svg',
+    '🛠️': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f6e0.svg',
+    '💡': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4a1.svg',
+    '🎨': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f3a8.svg',
+    '⚡': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/26a1.svg',
+    '✨': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/2728.svg',
+    '❤️': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/2764.svg',
+    '🎉': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f389.svg',
+    '💯': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4af.svg',
+    '🌟': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f31f.svg',
+    '👍': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f44d.svg',
+    '🤩': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f929.svg',
+    '😍': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f60d.svg',
+  };
+}
+
+/**
+ * Convert emoji to Unicode hex for Twemoji URL (CG-5)
+ * Handles most common emojis dynamically
+ */
+function getEmojiHex(emoji: string): string | null {
+  try {
+    const codePoints = [];
+    for (let i = 0; i < emoji.length; i++) {
+      const code = emoji.codePointAt(i);
+      if (code) {
+        codePoints.push(code.toString(16).toLowerCase());
+        // Skip surrogate pairs
+        if (code >= 0x10000) i++;
+      }
+    }
+    return codePoints.join('-');
+  } catch (error) {
+    console.warn(`Failed to convert emoji ${emoji} to hex:`, error);
+    return null;
+  }
 }

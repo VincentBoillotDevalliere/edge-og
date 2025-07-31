@@ -3,9 +3,10 @@ export {};
 /**
  * Default Open Graph template for CG-1
  * Updated for CG-2: Support theme and font parameters with fallbacks
+ * Updated for CG-5: Added emoji support for more attractive templates
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils';
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from './utils';
 
 export function DefaultTemplate({
   title = 'Edge-OG',
@@ -21,6 +22,7 @@ export function DefaultTemplate({
   // Theme color configurations - extended for CG-2
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
+  const templateEmoji = getTemplateEmoji('default'); // CG-5: Add emoji support
 
   // Sanitize and prepare text values
   const safeTitle = sanitizeText(title || 'Edge-OG').substring(0, 60);
@@ -57,7 +59,7 @@ export function DefaultTemplate({
               maxWidth: '800px',
             },
             children: [
-              // Logo
+              // Logo with emoji
               {
                 type: 'div',
                 props: {
@@ -80,13 +82,13 @@ export function DefaultTemplate({
                           fontSize: '32px',
                           fontWeight: '700',
                         },
-                        children: 'OG',
+                        children: templateEmoji.icon, // CG-5: Use emoji instead of 'OG'
                       },
                     },
                   ],
                 },
               },
-              // Title
+              // Title with emoji accent
               {
                 type: 'div',
                 props: {
@@ -97,8 +99,28 @@ export function DefaultTemplate({
                     lineHeight: '1.2',
                     marginBottom: '16px',
                     wordWrap: 'break-word',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    justifyContent: 'center',
                   },
-                  children: safeTitle,
+                  children: [
+                    {
+                      type: 'span',
+                      props: {
+                        children: safeTitle,
+                      },
+                    },
+                    {
+                      type: 'span',
+                      props: {
+                        style: {
+                          fontSize: '36px',
+                        },
+                        children: templateEmoji.accent, // CG-5: Add accent emoji
+                      },
+                    },
+                  ],
                 },
               },
               // Description

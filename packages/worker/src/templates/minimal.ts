@@ -3,9 +3,10 @@ export {};
 /**
  * Minimalist template for CG-3
  * Clean and simple design for elegant presentations
+ * Updated for CG-5: Added emoji support for more attractive templates
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils';
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from './utils';
 
 export function MinimalTemplate({
   title = 'Simple & Clean',
@@ -20,6 +21,7 @@ export function MinimalTemplate({
 }) {
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
+  const templateEmoji = getTemplateEmoji('minimal'); // CG-5: Add emoji support
 
   const safeTitle = sanitizeText(title).substring(0, 50);
   const safeSubtitle = sanitizeText(subtitle).substring(0, 80);
@@ -40,17 +42,15 @@ export function MinimalTemplate({
         textAlign: 'center',
       },
       children: [
-        // Minimal accent
+        // Minimal accent with emoji
         {
           type: 'div',
           props: {
             style: {
-              width: '40px',
-              height: '40px',
-              backgroundColor: themeColors.accentColor,
-              borderRadius: '50%',
+              fontSize: '40px',
               marginBottom: '60px',
             },
+            children: templateEmoji.icon, // CG-5: Use emoji instead of circle
           },
         },
         // Title

@@ -3,9 +3,10 @@ export {};
 /**
  * Product showcase template for CG-3
  * Optimized for e-commerce and product presentations
+ * Updated for CG-5: Added emoji support for more attractive templates
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils';
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from './utils';
 
 export function ProductTemplate({
   title = 'Amazing Product',
@@ -13,15 +14,23 @@ export function ProductTemplate({
   price = '99 USD',
   theme = 'light',
   font = 'inter',
+  emoji, // CG-5: Custom emoji parameter
 }: {
   title?: string;
   description?: string;
   price?: string;
   theme?: 'light' | 'dark' | 'blue' | 'green' | 'purple';
   font?: 'inter' | 'roboto' | 'playfair' | 'opensans';
+  emoji?: string; // CG-5: Custom emoji parameter type
 }) {
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
+  const templateEmoji = getTemplateEmoji('product'); // CG-5: Default emoji support
+  
+  // CG-5: Use custom emoji if provided, otherwise fall back to template emoji
+  // Try direct emoji rendering first (testing without text fallbacks)
+  const displayEmoji = emoji || templateEmoji.icon;
+  const accentEmoji = emoji || templateEmoji.accent || templateEmoji.icon;
 
   const safeTitle = sanitizeText(title).substring(0, 60);
   const safeDescription = sanitizeText(description).substring(0, 100);
@@ -60,8 +69,27 @@ export function ProductTemplate({
                     color: themeColors.textColor,
                     lineHeight: '1.1',
                     marginBottom: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
                   },
-                  children: safeTitle,
+                  children: [
+                    {
+                      type: 'span',
+                      props: {
+                        children: safeTitle,
+                      },
+                    },
+                    {
+                      type: 'span',
+                      props: {
+                        style: {
+                          fontSize: '36px',
+                        },
+                        children: accentEmoji, // CG-5: Use custom or accent emoji
+                      },
+                    },
+                  ],
                 },
               },
               {
@@ -142,7 +170,23 @@ export function ProductTemplate({
                     backgroundColor: themeColors.accentColor,
                     borderRadius: '12px',
                     marginBottom: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   },
+                  children: [
+                    {
+                      type: 'div',
+                      props: {
+                        style: {
+                          color: 'white',
+                          fontSize: '32px',
+                          fontWeight: '600',
+                        },
+                        children: displayEmoji, // CG-5: Use custom or default emoji
+                      },
+                    },
+                  ],
                 },
               },
               {

@@ -1,9 +1,10 @@
 /**
  * Blog post template for CG-3
  * Optimized for blog articles and content posts
+ * Updated for CG-5: Added emoji support for more attractive templates
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils'
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from './utils'
 
 export function BlogTemplate({
   title = 'Blog Post',
@@ -20,6 +21,7 @@ export function BlogTemplate({
 }) {
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
+  const templateEmoji = getTemplateEmoji('blog'); // CG-5: Add emoji support
 
   const safeTitle = sanitizeText(title).substring(0, 80);
   const safeDescription = sanitizeText(description).substring(0, 120);
@@ -48,6 +50,7 @@ export function BlogTemplate({
               marginBottom: '40px',
             },
             children: [
+              // Author avatar with emoji
               {
                 type: 'div',
                 props: {
@@ -70,7 +73,7 @@ export function BlogTemplate({
                           fontSize: '24px',
                           fontWeight: '600',
                         },
-                        children: safeAuthor.charAt(0).toUpperCase(),
+                        children: templateEmoji.icon, // CG-5: Use emoji instead of initial
                       },
                     },
                   ],
@@ -123,6 +126,7 @@ export function BlogTemplate({
               justifyContent: 'center',
             },
             children: [
+              // Title with emoji accent
               {
                 type: 'div',
                 props: {
@@ -132,8 +136,27 @@ export function BlogTemplate({
                     color: themeColors.textColor,
                     lineHeight: '1.1',
                     marginBottom: '24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
                   },
-                  children: safeTitle,
+                  children: [
+                    {
+                      type: 'span',
+                      props: {
+                        children: safeTitle,
+                      },
+                    },
+                    {
+                      type: 'span',
+                      props: {
+                        style: {
+                          fontSize: '42px',
+                        },
+                        children: templateEmoji.accent, // CG-5: Add accent emoji
+                      },
+                    },
+                  ],
                 },
               },
               {

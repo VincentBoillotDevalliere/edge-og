@@ -5,7 +5,7 @@ export {};
  * Optimized for software products and technical content
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils';
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from './utils';
 
 export function TechTemplate({
   title = 'Next-Gen Solution',
@@ -24,6 +24,7 @@ export function TechTemplate({
 }) {
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
+  const templateEmoji = getTemplateEmoji('tech'); // CG-5: Add emoji support
 
   const safeTitle = sanitizeText(title).substring(0, 60);
   const safeDescription = sanitizeText(description).substring(0, 100);
@@ -122,8 +123,27 @@ export function TechTemplate({
                     color: themeColors.textColor,
                     lineHeight: '1.1',
                     marginBottom: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
                   },
-                  children: safeTitle,
+                  children: [
+                    {
+                      type: 'span',
+                      props: {
+                        children: safeTitle,
+                      },
+                    },
+                    {
+                      type: 'span',
+                      props: {
+                        style: {
+                          fontSize: '42px',
+                        },
+                        children: templateEmoji.accent, // CG-5: Add accent emoji
+                      },
+                    },
+                  ],
                 },
               },
               // Description
@@ -219,7 +239,7 @@ export function TechTemplate({
                           fontSize: '32px',
                           fontWeight: '700',
                         },
-                        children: '',
+                        children: templateEmoji.icon, // CG-5: Use emoji instead of empty string
                       },
                     },
                   ],

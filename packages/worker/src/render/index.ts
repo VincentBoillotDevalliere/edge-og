@@ -49,6 +49,7 @@ export async function renderOpenGraphImage(params: {
   name?: string;
   instructor?: string;
   level?: string;
+  emoji?: string; // CG-5: Custom emoji support
 }): Promise<ArrayBuffer | string> {
   const { 
     title, 
@@ -59,6 +60,7 @@ export async function renderOpenGraphImage(params: {
     template = 'default', 
     format = 'png', 
     fallbackToSvg = true,
+    emoji, // CG-5: Custom emoji support
     // Template-specific params
     ...templateSpecificParams
   } = params;
@@ -71,7 +73,7 @@ export async function renderOpenGraphImage(params: {
       element = BlogTemplate({ title, description, theme, font, author: templateSpecificParams.author });
       break;
     case 'product':
-      element = ProductTemplate({ title, description, theme, font, price: templateSpecificParams.price });
+      element = ProductTemplate({ title, description, theme, font, emoji, price: templateSpecificParams.price });
       break;
     case 'event':
       element = EventTemplate({ 
@@ -179,11 +181,20 @@ export async function renderOpenGraphImage(params: {
   } catch (error) {
     console.warn('PNG conversion failed, details:', error instanceof Error ? error.message : String(error));
     
-    if (fallbackToSvg) {
+    // Check if this is a WASM-related error that should trigger fallback
+    const isWasmError = error instanceof Error && (
+      error.message.includes('WASM') ||
+      error.message.includes('WebAssembly') ||
+      error.message.includes('CompileError') ||
+      error.message.includes('code generation disallowed') ||
+      error.message.includes('PNG conversion is not available in local development')
+    );
+    
+    if (fallbackToSvg || isWasmError) {
       console.log('Falling back to SVG format due to PNG conversion failure');
       return svg;
     } else {
-      // Re-throw the error if fallback is disabled
+      // Re-throw the error if fallback is disabled and it's not a WASM issue
       throw error;
     }
   }

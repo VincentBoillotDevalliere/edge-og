@@ -3,9 +3,36 @@ export {};
 /**
  * News article template for CG-3
  * Optimized for news articles and announcements
+ * Upd                  style: {
+                    fontSize: '56px',
+                    fontWeight: '800',
+                    color: themeColors.textColor,
+                    lineHeight: '1.1',
+                    marginBottom: '24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                  },
+                  children: [
+                    {
+                      type: 'span',
+                      props: {
+                        children: safeTitle,
+                      },
+                    },
+                    {
+                      type: 'span',
+                      props: {
+                        style: {
+                          fontSize: '42px',
+                        },
+                        children: templateEmoji.accent, // CG-5: Add accent emoji
+                      },
+                    },
+                  ], CG-5: Added emoji support for more attractive templates
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils';
+import { getThemeColors, getFontFamily, sanitizeText, getTemplateEmoji } from './utils';
 
 export function NewsTemplate({
   title = 'Breaking News',
@@ -24,6 +51,7 @@ export function NewsTemplate({
 }) {
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
+  const templateEmoji = getTemplateEmoji('news'); // CG-5: Add emoji support
 
   const safeTitle = sanitizeText(title).substring(0, 90);
   const safeDescription = sanitizeText(description).substring(0, 120);
@@ -69,7 +97,7 @@ export function NewsTemplate({
                     textTransform: 'uppercase',
                     letterSpacing: '1px',
                   },
-                  children: safeCategory,
+                  children: [templateEmoji.icon, ' ', safeCategory].join(''), // CG-5: Add emoji to category
                 },
               },
               {

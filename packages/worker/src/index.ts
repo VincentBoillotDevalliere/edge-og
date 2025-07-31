@@ -166,8 +166,32 @@ async function handleOGImageGeneration(
 		wasInvalidated = true;
 	}
 
-	// Generate the image
-	const result = await renderOpenGraphImage(params);
+	// Generate the image with error handling for WASM issues
+	let result;
+	try {
+		result = await renderOpenGraphImage(params);
+	} catch (error) {
+		// Check if this is a WASM compilation error that should be handled gracefully
+		if (error instanceof Error && (
+			error.message.includes('CompileError') ||
+			error.message.includes('Wasm code generation disallowed') ||
+			error.message.includes('PNG conversion is not available in local development') ||
+			error.message.includes('WASM')
+		)) {
+			console.warn('WASM error occurred, attempting SVG fallback:', error.message);
+			
+			// Try to generate SVG instead
+			try {
+				result = await renderOpenGraphImage({ ...params, format: 'svg' });
+			} catch (svgError) {
+				console.error('SVG fallback also failed:', svgError);
+				throw new WorkerError('Image generation failed', 500, requestId);
+			}
+		} else {
+			// Re-throw other errors
+			throw error;
+		}
+	}
 
 	// Measure render time for performance monitoring
 	const renderDuration = Math.round(performance.now() - startRender);
@@ -249,6 +273,7 @@ function validateOGParams(searchParams: URLSearchParams): {
 	fontUrl?: string; // CG-4: Custom font URL support
 	template?: TemplateType;
 	format?: 'png' | 'svg';
+	emoji?: string; // CG-5: Emoji support
 	// Template-specific parameters
 	author?: string;
 	price?: string;
@@ -273,6 +298,7 @@ function validateOGParams(searchParams: URLSearchParams): {
 	const fontUrl = searchParams.get('fontUrl'); // CG-4: Custom font URL
 	const template = searchParams.get('template');
 	const format = searchParams.get('format');
+	const emoji = searchParams.get('emoji'); // CG-5: Emoji support
 	
 	// Extract template-specific parameters
 	const author = searchParams.get('author');
@@ -351,6 +377,7 @@ function validateOGParams(searchParams: URLSearchParams): {
 		fontUrl: fontUrl || undefined, // CG-4: Custom font URL
 		template: (template as TemplateType) || undefined,
 		format: (format as 'png' | 'svg') || undefined,
+		emoji: emoji || undefined, // CG-5: Emoji support
 		// Template-specific parameters
 		author: author || undefined,
 		price: price || undefined,

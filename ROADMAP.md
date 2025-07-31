@@ -22,6 +22,7 @@
 | CG‑2 | En tant que dev je paramètre couleur, police | Champs `theme`, `font` avec valeurs de repli | Must |
 | CG‑3 | En tant que PM je dispose de 10 templates JSX prêts | 10 fichiers prêts dans `templates/` + doc de rendu | Should |
 | CG‑4 | En tant qu’utilisateur avancé je charge une police custom via URL | `fontUrl` accepte TTF/OTF public, mise en cache | Could |
+| CG-5 | En tant que PM je dispose d'emoji ou de characteres particuliers dans mes templates pour les rendres plus attractif || Should |
 
 ### 2. Edge Caching & Performance
 
