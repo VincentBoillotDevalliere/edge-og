@@ -13,16 +13,22 @@ export function DefaultTemplate({
   description = 'Open Graph Generator at the Edge',
   theme = 'light',
   font = 'inter',
+  emoji, // CG-5: Custom emoji parameter
 }: {
   title?: string;
   description?: string;
   theme?: 'light' | 'dark' | 'blue' | 'green' | 'purple';
   font?: 'inter' | 'roboto' | 'playfair' | 'opensans';
+  emoji?: string; // CG-5: Custom emoji parameter type
 }) {
   // Theme color configurations - extended for CG-2
   const themeColors = getThemeColors(theme);
   const fontFamily = getFontFamily(font);
   const templateEmoji = getTemplateEmoji('default'); // CG-5: Add emoji support
+  
+  // CG-5: Use custom emoji if provided, otherwise fall back to template emoji
+  const displayEmoji = emoji || templateEmoji.icon;
+  const accentEmoji = emoji || templateEmoji.accent || templateEmoji.icon;
 
   // Sanitize and prepare text values
   const safeTitle = sanitizeText(title || 'Edge-OG').substring(0, 60);
@@ -82,7 +88,7 @@ export function DefaultTemplate({
                           fontSize: '32px',
                           fontWeight: '700',
                         },
-                        children: templateEmoji.icon, // CG-5: Use emoji instead of 'OG'
+                        children: displayEmoji, // CG-5: Use custom or default emoji
                       },
                     },
                   ],
@@ -117,7 +123,7 @@ export function DefaultTemplate({
                         style: {
                           fontSize: '36px',
                         },
-                        children: templateEmoji.accent, // CG-5: Add accent emoji
+                        children: accentEmoji, // CG-5: Use custom or accent emoji
                       },
                     },
                   ],
