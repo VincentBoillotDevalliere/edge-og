@@ -2,6 +2,8 @@ import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config';
 
 export default defineWorkersConfig({
 	test: {
+		// Remove coverage config due to Cloudflare Workers compatibility issues
+		// Coverage analysis is available in coverage-analysis.md
 		poolOptions: {
 			workers: {
 				wrangler: { configPath: './wrangler.jsonc' },
