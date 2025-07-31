@@ -38,8 +38,23 @@ describe('Edge-OG Worker', () => {
 	});
 
 	describe('Health check', () => {
-		it('responds with service info at root', async () => {
+		it('serves homepage HTML at root', async () => {
 			const request = new IncomingRequest('https://example.com/');
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('text/html; charset=utf-8');
+			
+			const html = await response.text();
+			expect(html).toContain('Edge-OG');
+			expect(html).toContain('Open Graph Image Generator');
+			expect(html).toContain('/og?template=');
+		});
+
+		it('provides health check endpoint', async () => {
+			const request = new IncomingRequest('https://example.com/health');
 			const ctx = createExecutionContext();
 			const response = await worker.fetch(request, env, ctx);
 			await waitOnExecutionContext(ctx);

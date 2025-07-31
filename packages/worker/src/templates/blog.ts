@@ -3,7 +3,7 @@
  * Optimized for blog articles and content posts
  */
 
-import { getThemeColors, getFontFamily, sanitizeText } from './utils';
+import { getThemeColors, getFontFamily, sanitizeText } from './utils'
 
 export function BlogTemplate({
   title = 'Blog Post',

@@ -11,6 +11,7 @@ import { renderOpenGraphImage } from './render';
 import { WorkerError } from './utils/error';
 import { log, logRequest } from './utils/logger';
 import { TemplateType } from './templates';
+import { getHomePage } from './utils/homepage';
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -44,13 +45,27 @@ export default {
 				return response;
 			}
 
-			// Default route - basic health check
+			// Default route - serve homepage
 			if (url.pathname === '/') {
+				const baseUrl = `${url.protocol}//${url.host}`;
+				const homepage = getHomePage(baseUrl);
+				
+				return new Response(homepage, {
+					headers: {
+						'Content-Type': 'text/html; charset=utf-8',
+						'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+					},
+				});
+			}
+
+			// Health check endpoint
+			if (url.pathname === '/health') {
 				return new Response(JSON.stringify({
 					service: 'edge-og',
 					version: '1.0.0',
 					status: 'healthy',
 					request_id: requestId,
+					timestamp: new Date().toISOString(),
 				}), {
 					headers: {
 						'Content-Type': 'application/json',
