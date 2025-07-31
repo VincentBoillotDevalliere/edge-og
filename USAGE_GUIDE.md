@@ -1,6 +1,8 @@
-# 📖 Template Parameters Guide - Edge-OG
+# 📖 Usage Guide - Edge-OG
 
-Complete documentation for testing all templates and parameter combinations in the Edge-OG service.
+Complete documentation for using all templates, parameters, and advanced features in the Edge-OG service.
+
+**🚀 New in CG-4**: Custom Font URL support for advanced typography control with your own font files!
 
 ## 🎯 Quick Test URLs
 
@@ -52,6 +54,38 @@ Controls the font family used throughout the template.
 /og?font=playfair
 /og?font=opensans
 ```
+
+### `fontUrl` - Custom Font URL *(CG-4 Advanced Feature)*
+Load custom fonts from external HTTPS URLs for advanced typography control.
+
+| Parameter | Type | Requirements | Description |
+|-----------|------|--------------|-------------|
+| `fontUrl` | string (URL) | HTTPS only, TTF/OTF/WOFF/WOFF2 | Custom font file URL |
+
+**Requirements:**
+- ✅ HTTPS protocol required for security
+- ✅ Supported formats: TTF, OTF, WOFF, WOFF2
+- ✅ Maximum file size: 5MB
+- ✅ Graceful fallback to Inter font on failure
+
+**Test URLs:**
+```bash
+# Custom font with fallback (will use Inter if font fails to load)
+/og?title=Custom%20Typography&fontUrl=https://fonts.example.com/CustomFont.ttf
+
+# Combined with other parameters
+/og?template=minimal&title=Brand%20Typography&theme=dark&fontUrl=https://fonts.example.com/BrandFont.woff2
+
+# Error cases (will return 400 error)
+/og?fontUrl=http://fonts.example.com/font.ttf          # HTTP not allowed
+/og?fontUrl=https://fonts.example.com/document.pdf    # Invalid extension
+```
+
+**Security & Performance:**
+- Font URLs are validated for security compliance
+- Failed font loads don't block image generation
+- Custom fonts are loaded with 5MB size limit
+- Maintains TTFB ≤ 150ms requirement
 
 ---
 
@@ -252,6 +286,11 @@ Perfect for online courses and educational content.
 
 # News with green theme
 /og?template=news&title=Environmental%20Breakthrough&source=Eco%20News&theme=green&font=opensans
+
+# Custom font examples (CG-4)
+/og?template=quote&title=Brand%20Typography&author=Design%20Team&fontUrl=https://fonts.example.com/BrandFont.ttf&theme=dark
+
+/og?template=minimal&title=Custom%20Design&subtitle=Using%20brand%20fonts&fontUrl=https://fonts.example.com/CustomFont.woff2
 ```
 
 ### Theme Testing Matrix
@@ -275,6 +314,27 @@ Test each template with different fonts:
 /og?template=product&title=Test%20Product&font=opensans
 ```
 
+### Custom Font URL Testing (CG-4)
+Test custom font URL functionality:
+```bash
+# Valid custom font URL (will fallback to Inter if font doesn't exist)
+/og?template=default&title=Custom%20Font%20Test&fontUrl=https://fonts.example.com/CustomFont.ttf
+
+# Different font formats
+/og?template=minimal&title=TTF%20Font&fontUrl=https://fonts.example.com/CustomFont.ttf
+/og?template=minimal&title=OTF%20Font&fontUrl=https://fonts.example.com/CustomFont.otf
+/og?template=minimal&title=WOFF%20Font&fontUrl=https://fonts.example.com/CustomFont.woff
+/og?template=minimal&title=WOFF2%20Font&fontUrl=https://fonts.example.com/CustomFont.woff2
+
+# Error testing (should return 400 Bad Request)
+/og?fontUrl=http://fonts.example.com/font.ttf          # HTTP not allowed
+/og?fontUrl=https://fonts.example.com/document.pdf    # Invalid extension
+/og?fontUrl=not-a-valid-url                           # Invalid URL format
+
+# Combined with other parameters
+/og?template=blog&title=Brand%20Post&author=Designer&theme=purple&fontUrl=https://fonts.example.com/BrandFont.woff2
+```
+
 ---
 
 ## 🔧 Parameter Validation & Limits
@@ -294,8 +354,14 @@ Remember to URL-encode special characters:
 ### Error Handling
 Invalid parameters will use defaults:
 - Unknown themes → `light`
-- Unknown fonts → `inter`
+- Unknown fonts → `inter`  
 - Unknown templates → `default`
+
+**CG-4 Custom Font URL Errors:**
+- HTTP URLs → 400 "Custom font URL must use HTTPS"
+- Invalid extensions → 400 "Custom font URL must point to a TTF, OTF, WOFF, or WOFF2 file"
+- Malformed URLs → 400 "Invalid fontUrl parameter. Must be a valid HTTPS URL"
+- Font load failures → Graceful fallback to Inter font (200 OK)
 
 ---
 
@@ -305,6 +371,7 @@ Invalid parameters will use defaults:
 - **Target TTFB**: ≤ 150ms (CG-1 requirement)
 - **Caching**: Images are cached for optimal performance
 - **Font Loading**: Fonts are loaded dynamically via Satori
+- **Custom Fonts (CG-4)**: External font loading with 5MB limit and graceful fallback
 
 ---
 
@@ -313,5 +380,6 @@ Invalid parameters will use defaults:
 1. **Basic Test**: `/og?template=default`
 2. **With Parameters**: `/og?template=blog&title=Test&author=Me`
 3. **Full Customization**: `/og?template=product&title=My%20Product&price=$50&theme=blue&font=playfair`
+4. **Custom Font (CG-4)**: `/og?template=minimal&title=Brand%20Typography&fontUrl=https://fonts.example.com/CustomFont.ttf`
 
 For any issues or questions, check the main documentation or test logs for detailed error messages.

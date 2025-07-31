@@ -47,8 +47,22 @@ export function getThemeColors(theme: 'light' | 'dark' | 'blue' | 'green' | 'pur
 /**
  * Get font family name for CSS
  * Implements CG-2: Font selection with fallbacks
+ * Updated for CG-4: Support custom font URLs
  */
-export function getFontFamily(font: 'inter' | 'roboto' | 'playfair' | 'opensans') {
+export function getFontFamily(font: 'inter' | 'roboto' | 'playfair' | 'opensans', customFontUrl?: string) {
+  // CG-4: If custom font URL is provided, extract font name from it
+  if (customFontUrl) {
+    try {
+      const url = new URL(customFontUrl);
+      const fileName = url.pathname.split('/').pop() || 'CustomFont';
+      const fontFamily = fileName.split('.')[0] || 'CustomFont';
+      return `${fontFamily}, sans-serif`; // Add fallback
+    } catch {
+      // If URL parsing fails, fall back to selected font
+      console.warn('Invalid custom font URL, falling back to selected font');
+    }
+  }
+
   const fonts = {
     inter: 'Inter, sans-serif',
     roboto: 'Roboto, sans-serif',

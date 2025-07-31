@@ -139,6 +139,7 @@ async function handleOGImageGeneration(
 		template: params.template || 'default',
 		theme: params.theme || 'light',
 		font: params.font || 'inter',
+		fontUrl: params.fontUrl ? 'custom' : undefined, // CG-4: Log custom font usage without exposing URL
 		format: params.format || 'png',
 		actual_format: resultIsSvg ? 'svg' : 'png',
 		fallback_occurred: fallbackOccurred,
@@ -180,6 +181,7 @@ function validateOGParams(searchParams: URLSearchParams): {
 	description?: string;
 	theme?: 'light' | 'dark' | 'blue' | 'green' | 'purple';
 	font?: 'inter' | 'roboto' | 'playfair' | 'opensans';
+	fontUrl?: string; // CG-4: Custom font URL support
 	template?: TemplateType;
 	format?: 'png' | 'svg';
 	// Template-specific parameters
@@ -203,6 +205,7 @@ function validateOGParams(searchParams: URLSearchParams): {
 	const description = searchParams.get('description');
 	const theme = searchParams.get('theme');
 	const font = searchParams.get('font');
+	const fontUrl = searchParams.get('fontUrl'); // CG-4: Custom font URL
 	const template = searchParams.get('template');
 	const format = searchParams.get('format');
 	
@@ -244,6 +247,25 @@ function validateOGParams(searchParams: URLSearchParams): {
 		throw new WorkerError('Invalid font parameter. Must be one of: inter, roboto, playfair, opensans', 400);
 	}
 
+	// CG-4: Validate fontUrl parameter - must be valid HTTPS URL to TTF/OTF
+	if (fontUrl) {
+		try {
+			const url = new URL(fontUrl);
+			// Security: Only allow HTTPS URLs
+			if (url.protocol !== 'https:') {
+				throw new WorkerError('Custom font URL must use HTTPS', 400);
+			}
+			// Basic validation for font file extensions
+			const pathname = url.pathname.toLowerCase();
+			if (!pathname.endsWith('.ttf') && !pathname.endsWith('.otf') && !pathname.endsWith('.woff') && !pathname.endsWith('.woff2')) {
+				throw new WorkerError('Custom font URL must point to a TTF, OTF, WOFF, or WOFF2 file', 400);
+			}
+		} catch (error) {
+			if (error instanceof WorkerError) throw error;
+			throw new WorkerError('Invalid fontUrl parameter. Must be a valid HTTPS URL', 400);
+		}
+	}
+
 	// Validate format parameter (development use)
 	const validFormats = ['png', 'svg'];
 	if (format && !validFormats.includes(format)) {
@@ -261,6 +283,7 @@ function validateOGParams(searchParams: URLSearchParams): {
 		description: description || undefined,
 		theme: (theme as 'light' | 'dark' | 'blue' | 'green' | 'purple') || undefined,
 		font: (font as 'inter' | 'roboto' | 'playfair' | 'opensans') || undefined,
+		fontUrl: fontUrl || undefined, // CG-4: Custom font URL
 		template: (template as TemplateType) || undefined,
 		format: (format as 'png' | 'svg') || undefined,
 		// Template-specific parameters

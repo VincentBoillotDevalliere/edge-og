@@ -341,6 +341,125 @@ describe('Edge-OG Worker', () => {
 		});
 	});
 
+	describe('CG-4: Custom Font URL Support', () => {
+		it('validates fontUrl parameter - requires HTTPS', async () => {
+			const searchParams = new URLSearchParams({
+				title: 'Test Custom Font',
+				fontUrl: 'http://fonts.example.com/CustomFont.ttf', // HTTP not allowed
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(400);
+			const data = await response.json() as any;
+			expect(data.error).toContain('Custom font URL must use HTTPS');
+		});
+
+		it('validates fontUrl parameter - requires valid font extension', async () => {
+			const searchParams = new URLSearchParams({
+				title: 'Test Custom Font',
+				fontUrl: 'https://fonts.example.com/NotAFont.pdf', // Invalid extension
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(400);
+			const data = await response.json() as any;
+			expect(data.error).toContain('Custom font URL must point to a TTF, OTF, WOFF, or WOFF2 file');
+		});
+
+		it('validates fontUrl parameter - requires valid URL format', async () => {
+			const searchParams = new URLSearchParams({
+				title: 'Test Custom Font',
+				fontUrl: 'not-a-valid-url', // Invalid URL
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(400);
+			const data = await response.json() as any;
+			expect(data.error).toContain('Invalid fontUrl parameter. Must be a valid HTTPS URL');
+		});
+
+		it('accepts valid fontUrl with TTF extension', async () => {
+			const searchParams = new URLSearchParams({
+				title: 'Test Custom Font',
+				fontUrl: 'https://fonts.example.com/CustomFont.ttf', // Valid TTF URL - will fail to load but pass validation
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			// Should succeed with fallback font since the custom font URL will fail to load
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('image/png');
+		});
+
+		it('accepts valid fontUrl with different extensions', async () => {
+			const validExtensions = ['ttf', 'otf', 'woff', 'woff2'];
+			
+			for (const ext of validExtensions) {
+				const searchParams = new URLSearchParams({
+					title: 'Test Custom Font',
+					fontUrl: `https://fonts.example.com/CustomFont.${ext}`,
+				});
+				
+				const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+				
+				// Should pass validation (actual font loading will fail and fallback)
+				expect(response.status).toBe(200);
+			}
+		});
+
+		it('combines fontUrl with other parameters', async () => {
+			const searchParams = new URLSearchParams({
+				title: 'Test Custom Font with Theme',
+				description: 'Testing CG-4 implementation',
+				theme: 'dark',
+				fontUrl: 'https://fonts.example.com/CustomFont.ttf',
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('image/png');
+		});
+
+		it('falls back gracefully when custom font loading fails', async () => {
+			const searchParams = new URLSearchParams({
+				title: 'Test Font Fallback',
+				description: 'Should fallback to Inter when custom font fails',
+				fontUrl: 'https://nonexistent.example.com/NonExistentFont.ttf',
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			// Should still generate image with fallback font
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('image/png');
+		});
+	});
+
 	describe('Error handling', () => {
 		it('returns 404 for unknown routes', async () => {
 			const request = new IncomingRequest('https://example.com/unknown');

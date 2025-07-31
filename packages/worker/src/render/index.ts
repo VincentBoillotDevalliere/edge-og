@@ -1,6 +1,6 @@
 export {};
 
-import { generateSVG, getFontsByName } from './svg';
+import { generateSVG, getFontsByName, getFontsByUrl } from './svg';
 import { svgToPng } from './png';
 import {
   DefaultTemplate,
@@ -29,6 +29,7 @@ export async function renderOpenGraphImage(params: {
   description?: string;
   theme?: 'light' | 'dark' | 'blue' | 'green' | 'purple';
   font?: 'inter' | 'roboto' | 'playfair' | 'opensans';
+  fontUrl?: string; // CG-4: Custom font URL support
   template?: TemplateType;
   format?: 'png' | 'svg'; // Development flag for testing
   fallbackToSvg?: boolean; // Auto-fallback when PNG fails
@@ -54,6 +55,7 @@ export async function renderOpenGraphImage(params: {
     description, 
     theme = 'light', 
     font = 'inter', 
+    fontUrl, // CG-4: Custom font URL
     template = 'default', 
     format = 'png', 
     fallbackToSvg = true,
@@ -160,7 +162,9 @@ export async function renderOpenGraphImage(params: {
   const svg = await generateSVG(element, {
     width: 1200,
     height: 630,
-    fonts: await getFontsByName(font), // Load fonts based on selection
+    fonts: fontUrl 
+      ? await getFontsByUrl(fontUrl) // CG-4: Load custom font from URL
+      : await getFontsByName(font), // Load fonts based on selection
   });
 
   // Return SVG if requested

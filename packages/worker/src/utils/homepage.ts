@@ -352,6 +352,11 @@ ${baseUrl}/og?template=event&title=Conference&date=March%2015&location=NYC
                             <option value="opensans">Open Sans</option>
                         </select>
                     </div>
+                    <div class="form-group">
+                        <label for="fontUrl">Custom Font URL (optional)</label>
+                        <input type="url" id="fontUrl" placeholder="https://fonts.example.com/CustomFont.ttf" style="font-size: 12px;">
+                        <small style="color: #666; font-size: 11px;">HTTPS URL to TTF, OTF, WOFF, or WOFF2 file. Overrides font selection above.</small>
+                    </div>
                     <button class="btn" onclick="updatePreview()">Generate Preview</button>
                     <button class="btn-outline btn" onclick="copyUrl()">Copy URL</button>
                 </div>
@@ -384,6 +389,11 @@ ${baseUrl}/og?template=event&title=Conference&date=March%2015&location=NYC
                     <h3>Tech Announcement</h3>
                     <div class="code">${baseUrl}/og?template=tech&title=AI%20Platform%20v2.0&category=Machine%20Learning&theme=blue&font=roboto</div>
                 </div>
+                <div class="card">
+                    <h3>Custom Font Example (CG-4)</h3>
+                    <div class="code" style="font-size: 0.8rem;">${baseUrl}/og?template=minimal&title=Custom%20Typography&subtitle=Using%20custom%20fonts&fontUrl=https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700</div>
+                    <small style="color: #666; font-size: 0.75rem;">⚠️ Example URL - actual font loading requires direct font file URL</small>
+                </div>
             </div>
         </div>
 
@@ -412,8 +422,14 @@ ${baseUrl}/og?template=event&title=Conference&date=March%2015&location=NYC
             const description = encodeURIComponent(document.getElementById('description').value);
             const theme = document.getElementById('theme').value;
             const font = document.getElementById('font').value;
+            const fontUrl = document.getElementById('fontUrl').value;
             
-            const url = \`${baseUrl}/og?template=\${template}&title=\${title}&description=\${description}&theme=\${theme}&font=\${font}\`;
+            let url = \`${baseUrl}/og?template=\${template}&title=\${title}&description=\${description}&theme=\${theme}&font=\${font}\`;
+            
+            // Add fontUrl parameter if provided
+            if (fontUrl && fontUrl.trim()) {
+                url += \`&fontUrl=\${encodeURIComponent(fontUrl)}\`;
+            }
             
             document.getElementById('preview-image').src = url;
             document.getElementById('generated-url').textContent = url;
@@ -428,7 +444,7 @@ ${baseUrl}/og?template=event&title=Conference&date=March%2015&location=NYC
         
         // Update preview when form changes
         document.addEventListener('DOMContentLoaded', function() {
-            ['template', 'title', 'description', 'theme', 'font'].forEach(id => {
+            ['template', 'title', 'description', 'theme', 'font', 'fontUrl'].forEach(id => {
                 document.getElementById(id).addEventListener('change', updatePreview);
                 document.getElementById(id).addEventListener('input', updatePreview);
             });

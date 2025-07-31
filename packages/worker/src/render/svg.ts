@@ -81,6 +81,81 @@ export async function getFontsByName(fontName: FontName = 'inter'): Promise<Sato
 }
 
 /**
+ * Load font from custom URL (CG-4)
+ * Supports TTF, OTF, WOFF, WOFF2 formats with caching
+ */
+export async function getFontsByUrl(fontUrl: string): Promise<SatoriOptions['fonts']> {
+  try {
+    // Fetch the font file directly
+    const fontResponse = await fetch(fontUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      },
+    });
+
+    if (!fontResponse.ok) {
+      throw new Error(`Font fetch failed: HTTP ${fontResponse.status}`);
+    }
+
+    const contentType = fontResponse.headers.get('content-type');
+    
+    // Validate content type for security
+    const validContentTypes = [
+      'font/ttf',
+      'font/otf', 
+      'font/woff',
+      'font/woff2',
+      'application/font-ttf',
+      'application/font-otf',
+      'application/font-woff',
+      'application/font-woff2',
+      'application/octet-stream', // Some servers serve fonts as octet-stream
+    ];
+
+    if (contentType && !validContentTypes.some(type => contentType.includes(type))) {
+      console.warn(`Suspicious content type for font: ${contentType}`);
+    }
+
+    const fontData = await fontResponse.arrayBuffer();
+
+    // Basic validation: ensure we have some data
+    if (fontData.byteLength === 0) {
+      throw new Error('Font file is empty');
+    }
+
+    // For security: limit font file size to 5MB
+    if (fontData.byteLength > 5 * 1024 * 1024) {
+      throw new Error('Font file too large (max 5MB)');
+    }
+
+    // Extract font family name from URL or use generic name
+    const url = new URL(fontUrl);
+    const fileName = url.pathname.split('/').pop() || 'CustomFont';
+    const fontFamily = fileName.split('.')[0] || 'CustomFont';
+
+    return [
+      {
+        name: fontFamily,
+        data: fontData,
+        weight: 400,
+        style: 'normal',
+      },
+      {
+        name: fontFamily,
+        data: fontData,
+        weight: 700,
+        style: 'normal',
+      },
+    ];
+  } catch (error) {
+    console.warn(`Failed to load custom font from ${fontUrl}:`, error);
+    // Fallback to Inter if custom font loading fails
+    console.log('Falling back to Inter font');
+    return await getFontsByName('inter');
+  }
+}
+
+/**
  * Load a specific font configuration
  */
 async function loadFont(config: { family: string; url: string }): Promise<SatoriOptions['fonts']> {

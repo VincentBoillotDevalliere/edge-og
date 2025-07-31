@@ -37,6 +37,19 @@ describe('Template Utilities (CG-3)', () => {
 			const font = getFontFamily('invalid');
 			expect(font).toBe('Inter, sans-serif');
 		});
+
+		// CG-4: Test custom font URL support
+		it('returns custom font family from URL', () => {
+			const customUrl = 'https://fonts.example.com/MyCustomFont.ttf';
+			const font = getFontFamily('inter', customUrl);
+			expect(font).toBe('MyCustomFont, sans-serif');
+		});
+
+		it('falls back to selected font for invalid custom URL', () => {
+			const invalidUrl = 'not-a-url';
+			const font = getFontFamily('roboto', invalidUrl);
+			expect(font).toBe('Roboto, sans-serif');
+		});
 	});
 
 	describe('sanitizeText', () => {
