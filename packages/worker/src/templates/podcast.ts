@@ -65,7 +65,7 @@ export function PodcastTemplate({
                     borderRadius: '20px',
                     fontSize: '14px',
                     fontWeight: '600',
-                    display: 'inline-block',
+                    display: 'flex',
                     marginBottom: '24px',
                     width: 'fit-content',
                   },
@@ -193,7 +193,7 @@ export function PodcastTemplate({
                 props: {
                   style: {
                     display: 'flex',
-                    alignItems: 'end',
+                    alignItems: 'flex-end',
                     gap: '4px',
                     height: '120px',
                   },
