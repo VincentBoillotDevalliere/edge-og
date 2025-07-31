@@ -10,7 +10,7 @@ import { getThemeColors, getFontFamily, sanitizeText } from './utils';
 export function ProductTemplate({
   title = 'Amazing Product',
   description = 'Discover our latest innovation',
-  price = '$99',
+  price = '99 USD',
   theme = 'light',
   font = 'inter',
 }: {

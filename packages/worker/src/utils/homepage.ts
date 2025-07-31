@@ -261,6 +261,14 @@ export function getHomePage(baseUrl: string): string {
                     </div>
                     <a href="${baseUrl}/og?template=event&title=Web%20Dev%20Conference&date=March%2015-17&location=San%20Francisco&theme=blue&font=opensans" class="btn-outline btn" target="_blank">View Full Size</a>
                 </div>
+                <div class="card">
+                    <h3>Quote Template</h3>
+                    <p>Perfect for inspirational quotes, testimonials, and memorable sayings.</p>
+                    <div class="preview">
+                        <img src="${baseUrl}/og?template=quote&title=Generate%20beautiful%20Open%20Graph%20images&author=Edge-OG&theme=purple&font=playfair" alt="Quote template preview" loading="lazy">
+                    </div>
+                    <a href="${baseUrl}/og?template=quote&title=Generate%20beautiful%20Open%20Graph%20images&author=Edge-OG&theme=purple&font=playfair" class="btn-outline btn" target="_blank">View Full Size</a>
+                </div>
             </div>
         </div>
 
@@ -424,7 +432,14 @@ ${baseUrl}/og?template=event&title=Conference&date=March%2015&location=NYC
             const font = document.getElementById('font').value;
             const fontUrl = document.getElementById('fontUrl').value;
             
-            let url = \`${baseUrl}/og?template=\${template}&title=\${title}&description=\${description}&theme=\${theme}&font=\${font}\`;
+            let url;
+            
+            // Handle Quote template differently - use description as the main quote text
+            if (template === 'quote') {
+                url = \`${baseUrl}/og?template=\${template}&title=\${description}&author=Edge-OG&theme=\${theme}&font=\${font}\`;
+            } else {
+                url = \`${baseUrl}/og?template=\${template}&title=\${title}&description=\${description}&theme=\${theme}&font=\${font}\`;
+            }
             
             // Add fontUrl parameter if provided
             if (fontUrl && fontUrl.trim()) {

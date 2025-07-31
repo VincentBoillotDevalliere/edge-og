@@ -219,7 +219,7 @@ export function TechTemplate({
                           fontSize: '32px',
                           fontWeight: '700',
                         },
-                        children: '</>',
+                        children: '',
                       },
                     },
                   ],
