@@ -4,7 +4,8 @@ export {};
  * Edge-OG Worker - Open Graph Image Generator at the Edge
  * 
  * Implements user story CG-1: En tant que crawler je reçois une image PNG 1200×630 <150 ms
- * Criteria: Content-Type: image/png, TTFB ≤ 150 ms
+ * Implements user story EC-1: Les images sont cachées 1 an pour réduire latence & coût
+ * Criteria: Content-Type: image/png, TTFB ≤ 150 ms, Cache hit ratio ≥ 90%
  */
 
 import { renderOpenGraphImage } from './render';
@@ -12,6 +13,13 @@ import { WorkerError } from './utils/error';
 import { log, logRequest } from './utils/logger';
 import { TemplateType } from './templates';
 import { getHomePage } from './utils/homepage';
+import { 
+	getCacheStatus, 
+	generateETag, 
+	getCacheHeaders, 
+	normalizeParams, 
+	createCacheMetrics 
+} from './utils/cache';
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -34,7 +42,7 @@ export default {
 
 			// Route: /og endpoint for Open Graph image generation
 			if (url.pathname === '/og') {
-				const response = await handleOGImageGeneration(url, requestId, ctx);
+				const response = await handleOGImageGeneration(url, requestId, ctx, request);
 				
 				// Log successful request
 				logRequest('og_image_generated', startTime, response.status, requestId, {
@@ -110,16 +118,24 @@ export default {
 /**
  * Handle Open Graph image generation
  * Implements CG-1: Generate PNG 1200×630 images <150ms
+ * Implements EC-1: Cache optimization with hit ratio monitoring
  */
 async function handleOGImageGeneration(
 	url: URL,
 	requestId: string,
-	ctx: ExecutionContext
+	ctx: ExecutionContext,
+	request: Request
 ): Promise<Response> {
 	const startRender = performance.now();
 
+	// EC-1: Get cache status for monitoring
+	const cacheStatus = getCacheStatus(request);
+
 	// Validate and extract query parameters
 	const params = validateOGParams(url.searchParams);
+	
+	// EC-1: Normalize parameters for consistent caching
+	const normalizedParams = normalizeParams(url.searchParams);
 
 	// Generate the image
 	const result = await renderOpenGraphImage(params);
@@ -132,6 +148,10 @@ async function handleOGImageGeneration(
 	const requestedPng = params.format !== 'svg';
 	const fallbackOccurred = requestedPng && resultIsSvg;
 
+	// EC-1: Generate ETag for cache validation
+	const etag = await generateETag(normalizedParams);
+
+	// Enhanced logging with cache performance metrics
 	log({
 		event: 'image_rendered',
 		duration_ms: renderDuration,
@@ -145,17 +165,27 @@ async function handleOGImageGeneration(
 		fallback_occurred: fallbackOccurred,
 	});
 
+	// EC-1: Log cache performance metrics
+	const cacheMetrics = createCacheMetrics(
+		cacheStatus,
+		renderDuration,
+		requestId,
+		params.template || 'default'
+	);
+	log(cacheMetrics as any); // Type assertion for compatibility with LogData
+
 	// Determine content type and response body
 	const contentType = resultIsSvg ? 'image/svg+xml' : 'image/png';
 	const responseBody = resultIsSvg ? result as string : result as ArrayBuffer;
 
-	// Prepare response headers
-	const headers: Record<string, string> = {
-		'Content-Type': contentType,
-		'Cache-Control': 'public, immutable, max-age=31536000',
-		'X-Request-ID': requestId,
-		'X-Render-Time': `${renderDuration}ms`,
-	};
+	// EC-1: Generate cache-optimized headers
+	const headers = getCacheHeaders(
+		contentType,
+		etag,
+		requestId,
+		renderDuration,
+		cacheStatus.status
+	);
 
 	// Add fallback notification header for debugging
 	if (fallbackOccurred) {
@@ -163,8 +193,7 @@ async function handleOGImageGeneration(
 		headers['X-Fallback-Reason'] = 'PNG conversion not available in development environment';
 	}
 
-	// Return with proper caching headers
-	// As per requirements: Cache-Control: public, immutable, max-age=31536000
+	// Return with EC-1 compliant caching headers
 	return new Response(responseBody, {
 		status: 200,
 		headers,

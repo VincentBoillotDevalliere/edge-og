@@ -100,8 +100,12 @@ describe('Edge-OG Worker', () => {
 			// Verify TTFB ≤ 150ms requirement (allowing some overhead for test environment)
 			expect(duration).toBeLessThan(200); // 200ms to account for test overhead
 			
-			// Verify caching headers as per EC-1 requirements
+			// Verify EC-1 caching headers requirements
 			expect(response.headers.get('Cache-Control')).toBe('public, immutable, max-age=31536000');
+			expect(response.headers.get('ETag')).toMatch(/^"[a-f0-9]+"/); // ETag format validation
+			expect(response.headers.get('Last-Modified')).toBeDefined();
+			expect(response.headers.get('Vary')).toBe('Accept-Encoding');
+			expect(response.headers.get('X-Cache-TTL')).toBe('31536000'); // 1 year
 			
 			// Verify response contains image data
 			const arrayBuffer = await response.arrayBuffer();
@@ -457,6 +461,118 @@ describe('Edge-OG Worker', () => {
 			// Should still generate image with fallback font
 			expect(response.status).toBe(200);
 			expect(response.headers.get('Content-Type')).toBe('image/png');
+		});
+	});
+
+	describe('EC-1: Edge Caching & Performance', () => {
+		it('returns proper cache headers for 1-year caching', async () => {
+			const request = new IncomingRequest('https://example.com/og?template=blog&title=Cache%20Test');
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(200);
+			
+			// EC-1 requirement: 1 year cache with immutable directive
+			expect(response.headers.get('Cache-Control')).toBe('public, immutable, max-age=31536000');
+			
+			// Cache validation headers
+			expect(response.headers.get('ETag')).toMatch(/^"[a-f0-9]+"/);
+			expect(response.headers.get('Last-Modified')).toBeDefined();
+			expect(response.headers.get('Vary')).toBe('Accept-Encoding');
+			
+			// Performance monitoring headers
+			expect(response.headers.get('X-Cache-TTL')).toBe('31536000');
+			expect(response.headers.get('X-Cache-Status')).toBeDefined();
+			expect(response.headers.get('X-Render-Time')).toMatch(/^\d+ms$/);
+		});
+
+		it('generates consistent ETags for same parameters', async () => {
+			const params = 'template=default&title=Test&theme=light';
+			
+			const request1 = new IncomingRequest(`https://example.com/og?${params}`);
+			const request2 = new IncomingRequest(`https://example.com/og?${params}`);
+			
+			const ctx1 = createExecutionContext();
+			const ctx2 = createExecutionContext();
+			
+			const response1 = await worker.fetch(request1, env, ctx1);
+			const response2 = await worker.fetch(request2, env, ctx2);
+			
+			await waitOnExecutionContext(ctx1);
+			await waitOnExecutionContext(ctx2);
+			
+			const etag1 = response1.headers.get('ETag');
+			const etag2 = response2.headers.get('ETag');
+			
+			expect(etag1).toBe(etag2); // Same parameters = same ETag
+			expect(etag1).toMatch(/^"[a-f0-9]+"/);
+		});
+
+		it('generates different ETags for different parameters', async () => {
+			const request1 = new IncomingRequest('https://example.com/og?template=blog&title=Test1');
+			const request2 = new IncomingRequest('https://example.com/og?template=blog&title=Test2');
+			
+			const ctx1 = createExecutionContext();
+			const ctx2 = createExecutionContext();
+			
+			const response1 = await worker.fetch(request1, env, ctx1);
+			const response2 = await worker.fetch(request2, env, ctx2);
+			
+			await waitOnExecutionContext(ctx1);
+			await waitOnExecutionContext(ctx2);
+			
+			const etag1 = response1.headers.get('ETag');
+			const etag2 = response2.headers.get('ETag');
+			
+			expect(etag1).not.toBe(etag2); // Different parameters = different ETags
+		});
+
+		it('maintains TTFB performance with caching headers', async () => {
+			const request = new IncomingRequest('https://example.com/og?template=product&title=Performance%20Test');
+			const ctx = createExecutionContext();
+			
+			const startTime = performance.now();
+			const response = await worker.fetch(request, env, ctx);
+			const duration = performance.now() - startTime;
+			
+			await waitOnExecutionContext(ctx);
+			
+			// Performance requirements maintained
+			expect(duration).toBeLessThan(200); // TTFB ≤ 150ms + test overhead
+			expect(response.status).toBe(200);
+			
+			// Cache headers don't impact performance
+			expect(response.headers.get('Cache-Control')).toBeDefined();
+			expect(response.headers.get('ETag')).toBeDefined();
+		});
+
+		it('includes cache performance monitoring headers', async () => {
+			const request = new IncomingRequest('https://example.com/og?template=minimal&title=Monitor');
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			// Monitoring headers for cache analytics
+			expect(response.headers.get('X-Request-ID')).toBeDefined();
+			expect(response.headers.get('X-Render-Time')).toMatch(/^\d+ms$/);
+			expect(response.headers.get('X-Cache-Status')).toBeDefined();
+			expect(response.headers.get('X-Cache-TTL')).toBe('31536000');
+		});
+
+		it('handles template variations with proper caching', async () => {
+			const templates = ['default', 'blog', 'product', 'event'];
+			
+			for (const template of templates) {
+				const request = new IncomingRequest(`https://example.com/og?template=${template}&title=Cache%20Test`);
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+				
+				expect(response.status).toBe(200);
+				expect(response.headers.get('Cache-Control')).toBe('public, immutable, max-age=31536000');
+				expect(response.headers.get('ETag')).toMatch(/^"[a-f0-9]+"/);
+			}
 		});
 	});
 
