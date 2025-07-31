@@ -62,20 +62,6 @@ export function QuoteTemplate({
             children: safeTitle,
           },
         },
-        // Quote mark
-        {
-          type: 'div',
-          props: {
-            style: {
-              fontSize: '80px',
-              color: themeColors.accentColor,
-              opacity: 0.3,
-              lineHeight: '1',
-              marginBottom: '20px',
-            },
-            children: '"',
-          },
-        },
         // Quote text
         {
           type: 'div',
@@ -134,6 +120,60 @@ export function QuoteTemplate({
                     opacity: 0.6,
                   },
                   children: safeRole,
+                },
+              },
+            ],
+          },
+        },
+        // Brand logo at bottom
+        {
+          type: 'div',
+          props: {
+            style: {
+              marginTop: '60px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '12px',
+            },
+            children: [
+              {
+                type: 'div',
+                props: {
+                  style: {
+                    width: '32px',
+                    height: '32px',
+                    backgroundColor: themeColors.accentColor,
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  },
+                  children: [
+                    {
+                      type: 'div',
+                      props: {
+                        style: {
+                          color: 'white',
+                          fontSize: '14px',
+                          fontWeight: '700',
+                        },
+                        children: 'OG',
+                      },
+                    },
+                  ],
+                },
+              },
+              {
+                type: 'div',
+                props: {
+                  style: {
+                    fontSize: '14px',
+                    color: themeColors.textColor,
+                    opacity: 0.5,
+                    fontWeight: '500',
+                  },
+                  children: 'Edge-OG',
                 },
               },
             ],
