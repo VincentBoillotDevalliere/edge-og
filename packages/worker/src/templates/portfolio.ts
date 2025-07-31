@@ -117,6 +117,8 @@ export function PortfolioTemplate({
                 props: {
                   style: {
                     flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
                   },
                   children: [
                     {
@@ -156,7 +158,7 @@ export function PortfolioTemplate({
                           borderRadius: '4px',
                           fontSize: '16px',
                           fontWeight: '600',
-                          display: 'inline-block',
+                          display: 'block',
                         },
                         children: 'View Portfolio',
                       },
@@ -170,8 +172,8 @@ export function PortfolioTemplate({
                 props: {
                   style: {
                     width: '280px',
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
+                    display: 'flex',
+                    flexWrap: 'wrap',
                     gap: '16px',
                   },
                   children: [

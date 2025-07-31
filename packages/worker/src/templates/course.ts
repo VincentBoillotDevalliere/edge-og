@@ -105,6 +105,8 @@ export function CourseTemplate({
                 props: {
                   style: {
                     flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
                   },
                   children: [
                     {
@@ -218,7 +220,9 @@ export function CourseTemplate({
                           borderRadius: '8px',
                           fontSize: '18px',
                           fontWeight: '600',
-                          display: 'inline-block',
+                          display: 'block',
+                          textAlign: 'center',
+                          width: 'fit-content',
                         },
                         children: 'Enroll Now',
                       },

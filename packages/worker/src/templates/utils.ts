@@ -80,9 +80,13 @@ export function getFontFamily(font: 'inter' | 'roboto' | 'playfair' | 'opensans'
 export function sanitizeText(text: string): string {
   if (!text) return '';
   
-  // Very minimal sanitization - only remove truly dangerous characters
   return text
-    .replace(/[\u0000-\u001F\u007F]/g, '') // Remove only control characters and DEL
+    .replace(/<\/([^>]*)>/g, ' $1 ') // Replace closing tags like </script> with " script "
+    .replace(/<([^>]*)>/g, ' $1 ') // Replace opening tags like <script> with " script "
+    .replace(/[<>&"']/g, ' ') // Remove remaining HTML characters
+    .replace(/[\u0000-\u001F\u007F]/g, '') // Remove control characters and DEL
+    .normalize('NFD') // Decompose accented characters
+    .replace(/[\u0300-\u036f]/g, '') // Remove accent marks
     .replace(/\s+/g, ' ') // Normalize whitespace
     .trim();
 }
