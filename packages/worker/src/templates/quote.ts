@@ -10,6 +10,7 @@ import { getThemeColors, getFontFamily, sanitizeText } from './utils';
 export function QuoteTemplate({
   title = 'Customer Success Story',
   quote = 'This product has transformed our business completely!',
+  description, // Allow description as an alias for quote
   author = 'Happy Customer',
   role = 'CEO',
   theme = 'light',
@@ -17,6 +18,7 @@ export function QuoteTemplate({
 }: {
   title?: string;
   quote?: string;
+  description?: string; // Allow description as an alias for quote
   author?: string;
   role?: string;
   theme?: 'light' | 'dark' | 'blue' | 'green' | 'purple';
@@ -26,7 +28,9 @@ export function QuoteTemplate({
   const fontFamily = getFontFamily(font);
 
   const safeTitle = sanitizeText(title).substring(0, 60);
-  const safeQuote = sanitizeText(quote).substring(0, 140);
+  // Use description if provided, otherwise fall back to quote
+  const quoteText = description || quote;
+  const safeQuote = sanitizeText(quoteText).substring(0, 140);
   const safeAuthor = sanitizeText(author).substring(0, 30);
   const safeRole = sanitizeText(role).substring(0, 30);
 

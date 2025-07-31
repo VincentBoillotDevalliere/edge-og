@@ -80,12 +80,9 @@ export function getFontFamily(font: 'inter' | 'roboto' | 'playfair' | 'opensans'
 export function sanitizeText(text: string): string {
   if (!text) return '';
   
-  // Replace problematic characters and normalize
+  // Very minimal sanitization - only remove truly dangerous characters
   return text
-    .normalize('NFD') // Decompose combined characters
-    .replace(/[\u0300-\u036f]/g, '') // Remove combining diacritical marks
-    .replace(/[^\x00-\x7F]/g, '?') // Replace non-ASCII with ?
-    .replace(/[^\w\s\-.,!?()]/g, ' ') // Only keep safe characters
+    .replace(/[\u0000-\u001F\u007F]/g, '') // Remove only control characters and DEL
     .replace(/\s+/g, ' ') // Normalize whitespace
     .trim();
 }
