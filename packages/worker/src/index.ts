@@ -18,7 +18,14 @@ import {
 	generateETag, 
 	getCacheHeaders, 
 	normalizeParams, 
-	createCacheMetrics 
+	createCacheMetrics,
+	// EC-2: Cache invalidation imports
+	generateVersionedETag,
+	extractCacheVersion,
+	validateCacheVersion,
+	shouldInvalidateCache,
+	getVersionedCacheHeaders,
+	createCacheInvalidationMetrics
 } from './utils/cache';
 
 export default {
@@ -42,7 +49,7 @@ export default {
 
 			// Route: /og endpoint for Open Graph image generation
 			if (url.pathname === '/og') {
-				const response = await handleOGImageGeneration(url, requestId, ctx, request);
+				const response = await handleOGImageGeneration(url, requestId, ctx, request, env);
 				
 				// Log successful request
 				logRequest('og_image_generated', startTime, response.status, requestId, {
@@ -119,12 +126,14 @@ export default {
  * Handle Open Graph image generation
  * Implements CG-1: Generate PNG 1200×630 images <150ms
  * Implements EC-1: Cache optimization with hit ratio monitoring
+ * Implements EC-2: Cache invalidation when hash changes
  */
 async function handleOGImageGeneration(
 	url: URL,
 	requestId: string,
 	ctx: ExecutionContext,
-	request: Request
+	request: Request,
+	env?: Env
 ): Promise<Response> {
 	const startRender = performance.now();
 
@@ -137,6 +146,26 @@ async function handleOGImageGeneration(
 	// EC-1: Normalize parameters for consistent caching
 	const normalizedParams = normalizeParams(url.searchParams);
 
+	// EC-2: Extract and validate cache version for invalidation support
+	const rawCacheVersion = extractCacheVersion(url.searchParams, env);
+	const cacheVersion = validateCacheVersion(rawCacheVersion);
+	
+	// EC-2: Check if cache should be invalidated
+	const shouldInvalidate = shouldInvalidateCache(cacheVersion, cacheStatus.status === 'HIT' ? 'existing' : undefined);
+	let wasInvalidated = false;
+	
+	if (shouldInvalidate && cacheVersion) {
+		// Log cache invalidation for monitoring
+		const invalidationMetrics = createCacheInvalidationMetrics(
+			requestId,
+			'existing',
+			cacheVersion,
+			'version_mismatch'
+		);
+		log(invalidationMetrics as any);
+		wasInvalidated = true;
+	}
+
 	// Generate the image
 	const result = await renderOpenGraphImage(params);
 
@@ -148,8 +177,10 @@ async function handleOGImageGeneration(
 	const requestedPng = params.format !== 'svg';
 	const fallbackOccurred = requestedPng && resultIsSvg;
 
-	// EC-1: Generate ETag for cache validation
-	const etag = await generateETag(normalizedParams);
+	// EC-2: Generate versioned ETag for cache invalidation support
+	const etag = cacheVersion 
+		? await generateVersionedETag(normalizedParams, cacheVersion)
+		: await generateETag(normalizedParams);
 
 	// Enhanced logging with cache performance metrics
 	log({
@@ -163,6 +194,9 @@ async function handleOGImageGeneration(
 		format: params.format || 'png',
 		actual_format: resultIsSvg ? 'svg' : 'png',
 		fallback_occurred: fallbackOccurred,
+		// EC-2: Log cache version information
+		cache_version: cacheVersion || 'none',
+		cache_invalidated: wasInvalidated,
 	});
 
 	// EC-1: Log cache performance metrics
@@ -178,13 +212,15 @@ async function handleOGImageGeneration(
 	const contentType = resultIsSvg ? 'image/svg+xml' : 'image/png';
 	const responseBody = resultIsSvg ? result as string : result as ArrayBuffer;
 
-	// EC-1: Generate cache-optimized headers
-	const headers = getCacheHeaders(
+	// EC-2: Generate versioned cache headers with invalidation support
+	const headers = getVersionedCacheHeaders(
 		contentType,
 		etag,
 		requestId,
 		renderDuration,
-		cacheStatus.status
+		cacheStatus.status,
+		cacheVersion,
+		wasInvalidated
 	);
 
 	// Add fallback notification header for debugging
@@ -193,7 +229,7 @@ async function handleOGImageGeneration(
 		headers['X-Fallback-Reason'] = 'PNG conversion not available in development environment';
 	}
 
-	// Return with EC-1 compliant caching headers
+	// Return with EC-1 compliant caching headers and EC-2 invalidation support
 	return new Response(responseBody, {
 		status: 200,
 		headers,

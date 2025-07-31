@@ -589,4 +589,168 @@ describe('Edge-OG Worker', () => {
 			expect(data.request_id).toBeDefined();
 		});
 	});
+
+	describe('EC-2: Cache Invalidation Integration', () => {
+
+		it('supports cache invalidation via URL parameter v=', async () => {
+			const searchParams = new URLSearchParams({
+				template: 'blog',
+				title: 'Cache Invalidation Test',
+				v: 'deployment-2024-01-15'
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('image/png');
+			
+			// EC-2: Check cache version header
+			expect(response.headers.get('X-Cache-Version')).toBe('deployment-2024-01-15');
+			
+			// ETag should include version information
+			const etag = response.headers.get('ETag');
+			expect(etag).toBeDefined();
+			expect(etag).toMatch(/^"[a-f0-9]+"/);
+		});
+
+		it('supports cache invalidation via version parameter', async () => {
+			const searchParams = new URLSearchParams({
+				template: 'minimal',
+				title: 'Version Test',
+				version: 'v2.1.0'
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(200);
+			expect(response.headers.get('X-Cache-Version')).toBe('v2.1.0');
+		});
+
+		it('supports cache invalidation via cache_version parameter', async () => {
+			const searchParams = new URLSearchParams({
+				template: 'product',
+				title: 'Cache Version Test',
+				cache_version: 'build-456'
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(200);
+			expect(response.headers.get('X-Cache-Version')).toBe('build-456');
+		});
+
+		it('ignores invalid cache version formats', async () => {
+			const searchParams = new URLSearchParams({
+				template: 'blog',
+				title: 'Invalid Version Test',
+				v: 'invalid version with spaces!' // Invalid format
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(200);
+			// Invalid version should be ignored
+			expect(response.headers.get('X-Cache-Version')).toBeNull();
+		});
+
+		it('generates different ETags for different cache versions', async () => {
+			const baseParams = new URLSearchParams({
+				template: 'event',
+				title: 'ETag Version Test'
+			});
+			
+			// Same parameters, different cache versions
+			const params1 = new URLSearchParams(baseParams);
+			params1.set('v', 'v1.0.0');
+			
+			const params2 = new URLSearchParams(baseParams);
+			params2.set('v', 'v1.0.1');
+			
+			const request1 = new IncomingRequest(`https://example.com/og?${params1}`);
+			const request2 = new IncomingRequest(`https://example.com/og?${params2}`);
+			
+			const ctx1 = createExecutionContext();
+			const ctx2 = createExecutionContext();
+			
+			const response1 = await worker.fetch(request1, env, ctx1);
+			const response2 = await worker.fetch(request2, env, ctx2);
+			
+			await waitOnExecutionContext(ctx1);
+			await waitOnExecutionContext(ctx2);
+			
+			const etag1 = response1.headers.get('ETag');
+			const etag2 = response2.headers.get('ETag');
+			
+			// Different versions should produce different ETags
+			expect(etag1).not.toBe(etag2);
+			expect(response1.headers.get('X-Cache-Version')).toBe('v1.0.0');
+			expect(response2.headers.get('X-Cache-Version')).toBe('v1.0.1');
+		});
+
+		it('maintains consistent ETags for same cache version', async () => {
+			const params = new URLSearchParams({
+				template: 'tech',
+				title: 'Consistent ETag Test',
+				v: 'stable-version'
+			});
+			
+			const request1 = new IncomingRequest(`https://example.com/og?${params}`);
+			const request2 = new IncomingRequest(`https://example.com/og?${params}`);
+			
+			const ctx1 = createExecutionContext();
+			const ctx2 = createExecutionContext();
+			
+			const response1 = await worker.fetch(request1, env, ctx1);
+			const response2 = await worker.fetch(request2, env, ctx2);
+			
+			await waitOnExecutionContext(ctx1);
+			await waitOnExecutionContext(ctx2);
+			
+			const etag1 = response1.headers.get('ETag');
+			const etag2 = response2.headers.get('ETag');
+			
+			// Same parameters and version should produce same ETag
+			expect(etag1).toBe(etag2);
+		});
+
+		it('maintains EC-1 compliance with versioned caching', async () => {
+			const searchParams = new URLSearchParams({
+				template: 'portfolio',
+				title: 'EC-1 Compliance Test',
+				v: 'compliance-test'
+			});
+			
+			const request = new IncomingRequest(`https://example.com/og?${searchParams}`);
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(200);
+			
+			// EC-1: Maintain 1-year cache headers
+			expect(response.headers.get('Cache-Control')).toBe('public, immutable, max-age=31536000');
+			expect(response.headers.get('X-Cache-TTL')).toBe('31536000');
+			
+			// EC-2: Include version information
+			expect(response.headers.get('X-Cache-Version')).toBe('compliance-test');
+			
+			// Standard cache headers maintained
+			expect(response.headers.get('ETag')).toBeDefined();
+			expect(response.headers.get('Last-Modified')).toBeDefined();
+			expect(response.headers.get('Vary')).toBe('Accept-Encoding');
+		});
+
+	});
 });

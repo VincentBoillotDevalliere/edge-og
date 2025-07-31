@@ -178,6 +178,134 @@ export function generateCacheVersion(baseParams: Record<string, unknown>, env?: 
 }
 
 /**
+ * EC-2: Cache Invalidation Utilities
+ * Provides cache invalidation functionality when hash changes
+ */
+
+/**
+ * Generate cache-busting ETag with version control for EC-2
+ * When cacheVersion changes, it forces a cache miss
+ */
+export async function generateVersionedETag(
+	params: Record<string, unknown>, 
+	cacheVersion?: string
+): Promise<string> {
+	// Include cache version in ETag calculation for EC-2 invalidation
+	const versionedParams = {
+		...params,
+		__cache_version: cacheVersion || 'default'
+	};
+	
+	return generateETag(versionedParams);
+}
+
+/**
+ * Check if cache should be invalidated based on version hash
+ * Returns true if cache should be invalidated (force miss)
+ */
+export function shouldInvalidateCache(
+	currentVersion: string | undefined,
+	storedVersion: string | undefined
+): boolean {
+	// If no versions provided, no invalidation needed
+	if (!currentVersion && !storedVersion) {
+		return false;
+	}
+	
+	// If versions don't match, invalidate cache
+	return currentVersion !== storedVersion;
+}
+
+/**
+ * Create cache invalidation log entry for EC-2 monitoring
+ */
+export function createCacheInvalidationMetrics(
+	requestId: string,
+	oldVersion: string | undefined,
+	newVersion: string | undefined,
+	reason: string
+): Record<string, unknown> {
+	return {
+		event: 'cache_invalidation',
+		request_id: requestId,
+		old_version: oldVersion || 'none',
+		new_version: newVersion || 'none',
+		invalidation_reason: reason,
+		timestamp: new Date().toISOString(),
+	};
+}
+
+/**
+ * Enhanced cache headers with version control for EC-2
+ * Includes cache version in headers for debugging and monitoring
+ */
+export function getVersionedCacheHeaders(
+	contentType: string,
+	etag: string,
+	requestId: string,
+	renderTime: number,
+	cacheStatus: string,
+	cacheVersion?: string,
+	wasInvalidated?: boolean
+): Record<string, string> {
+	const headers = getCacheHeaders(contentType, etag, requestId, renderTime, cacheStatus);
+	
+	// Add EC-2 specific headers
+	if (cacheVersion) {
+		headers['X-Cache-Version'] = cacheVersion;
+	}
+	
+	if (wasInvalidated) {
+		headers['X-Cache-Invalidated'] = 'true';
+	}
+	
+	return headers;
+}
+
+/**
+ * Extract cache version from URL parameters or environment
+ * Supports both query parameter (?v=abc123) and environment variable
+ */
+export function extractCacheVersion(
+	searchParams: URLSearchParams,
+	env?: any
+): string | undefined {
+	// Check for explicit version parameter (highest priority)
+	const versionParam = searchParams.get('v') || searchParams.get('version') || searchParams.get('cache_version');
+	if (versionParam) {
+		return versionParam;
+	}
+	
+	// Check environment variable (medium priority)
+	if (env?.CACHE_VERSION) {
+		return env.CACHE_VERSION;
+	}
+	
+	// No explicit version found
+	return undefined;
+}
+
+/**
+ * Validate cache version format
+ * Ensures version strings are safe and consistent
+ */
+export function validateCacheVersion(version: string | undefined): string | undefined {
+	if (!version) {
+		return undefined;
+	}
+	
+	// Version should be alphanumeric with limited special characters
+	const versionRegex = /^[a-zA-Z0-9._-]{1,32}$/;
+	
+	if (!versionRegex.test(version)) {
+		// Invalid version format, ignore it
+		return undefined;
+	}
+	
+	return version;
+}
+
+/**
  * Create cache performance log entry
  * Structured logging for cache analytics and monitoring
  */

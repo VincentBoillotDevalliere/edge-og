@@ -8,7 +8,14 @@ import {
 	normalizeParams, 
 	createCacheMetrics,
 	normalizeCacheKey,
-	calculateHitRatio 
+	calculateHitRatio,
+	// EC-2: Cache invalidation imports
+	generateVersionedETag,
+	extractCacheVersion,
+	validateCacheVersion,
+	shouldInvalidateCache,
+	getVersionedCacheHeaders,
+	createCacheInvalidationMetrics
 } from '../src/utils/cache';
 
 describe('EC-1: Edge Caching & Performance', () => {
@@ -292,6 +299,219 @@ describe('Cache Integration Testing', () => {
 		expect(hits).toBe(900); // Verify we have exactly 900 hits
 		expect(hitRatio).toBe(0.9); // 90% hit ratio (900/1000)
 		expect(hitRatio).toBeGreaterThanOrEqual(0.90); // Meets EC-1 requirement
+	});
+
+});
+
+describe('EC-2: Cache Invalidation', () => {
+
+	describe('Cache Version Management', () => {
+
+		it('generates different versioned ETags for different versions', async () => {
+			const params = { template: 'blog', title: 'Test' };
+			
+			const etag1 = await generateVersionedETag(params, 'v1.0.0');
+			const etag2 = await generateVersionedETag(params, 'v1.0.1');
+			
+			expect(etag1).not.toBe(etag2);
+			expect(etag1).toMatch(/^"[a-f0-9]+"/);
+			expect(etag2).toMatch(/^"[a-f0-9]+"/);
+		});
+
+		it('generates same versioned ETags for same version', async () => {
+			const params = { template: 'blog', title: 'Test' };
+			const version = 'v1.2.3';
+			
+			const etag1 = await generateVersionedETag(params, version);
+			const etag2 = await generateVersionedETag(params, version);
+			
+			expect(etag1).toBe(etag2);
+		});
+
+		it('extracts cache version from URL parameters', () => {
+			const searchParamsV = new URLSearchParams('title=Test&v=abc123');
+			const searchParamsVersion = new URLSearchParams('title=Test&version=def456');
+			const searchParamsCacheVersion = new URLSearchParams('title=Test&cache_version=ghi789');
+			
+			expect(extractCacheVersion(searchParamsV)).toBe('abc123');
+			expect(extractCacheVersion(searchParamsVersion)).toBe('def456');
+			expect(extractCacheVersion(searchParamsCacheVersion)).toBe('ghi789');
+		});
+
+		it('extracts cache version from environment', () => {
+			const searchParams = new URLSearchParams('title=Test');
+			const env = { CACHE_VERSION: 'env-v1.0.0' };
+			
+			expect(extractCacheVersion(searchParams, env)).toBe('env-v1.0.0');
+		});
+
+		it('prioritizes URL parameter over environment variable', () => {
+			const searchParams = new URLSearchParams('title=Test&v=url-version');
+			const env = { CACHE_VERSION: 'env-version' };
+			
+			expect(extractCacheVersion(searchParams, env)).toBe('url-version');
+		});
+
+		it('validates cache version format', () => {
+			expect(validateCacheVersion('v1.0.0')).toBe('v1.0.0');
+			expect(validateCacheVersion('abc123')).toBe('abc123');
+			expect(validateCacheVersion('build-2024.01.15')).toBe('build-2024.01.15');
+			
+			// Invalid formats should return undefined
+			expect(validateCacheVersion('version with spaces')).toBeUndefined();
+			expect(validateCacheVersion('version@with!special#chars')).toBeUndefined();
+			expect(validateCacheVersion('very-long-version-string-that-exceeds-32-characters')).toBeUndefined();
+		});
+
+	});
+
+	describe('Cache Invalidation Logic', () => {
+
+		it('identifies when cache should be invalidated', () => {
+			expect(shouldInvalidateCache('v1.0.1', 'v1.0.0')).toBe(true);
+			expect(shouldInvalidateCache('new-version', 'old-version')).toBe(true);
+			expect(shouldInvalidateCache('same-version', 'same-version')).toBe(false);
+		});
+
+		it('handles missing version gracefully', () => {
+			expect(shouldInvalidateCache(undefined, undefined)).toBe(false);
+			expect(shouldInvalidateCache('v1.0.0', undefined)).toBe(true);
+			expect(shouldInvalidateCache(undefined, 'v1.0.0')).toBe(true);
+		});
+
+		it('creates cache invalidation metrics', () => {
+			const metrics = createCacheInvalidationMetrics(
+				'req-123',
+				'v1.0.0',
+				'v1.0.1',
+				'version_upgrade'
+			);
+			
+			expect(metrics.event).toBe('cache_invalidation');
+			expect(metrics.request_id).toBe('req-123');
+			expect(metrics.old_version).toBe('v1.0.0');
+			expect(metrics.new_version).toBe('v1.0.1');
+			expect(metrics.invalidation_reason).toBe('version_upgrade');
+			expect(metrics.timestamp).toBeDefined();
+		});
+
+		it('handles missing versions in invalidation metrics', () => {
+			const metrics = createCacheInvalidationMetrics(
+				'req-456',
+				undefined,
+				'v2.0.0',
+				'first_deployment'
+			);
+			
+			expect(metrics.old_version).toBe('none');
+			expect(metrics.new_version).toBe('v2.0.0');
+		});
+
+	});
+
+	describe('Versioned Cache Headers', () => {
+
+		it('includes cache version in headers', () => {
+			const headers = getVersionedCacheHeaders(
+				'image/png',
+				'"etag123"',
+				'req-test',
+				50,
+				'MISS',
+				'v1.2.3'
+			);
+			
+			expect(headers['Cache-Control']).toBe('public, immutable, max-age=31536000');
+			expect(headers['X-Cache-Version']).toBe('v1.2.3');
+			expect(headers['ETag']).toBe('"etag123"');
+		});
+
+		it('includes invalidation flag when cache was invalidated', () => {
+			const headers = getVersionedCacheHeaders(
+				'image/png',
+				'"etag456"',
+				'req-test',
+				75,
+				'MISS',
+				'v2.0.0',
+				true
+			);
+			
+			expect(headers['X-Cache-Version']).toBe('v2.0.0');
+			expect(headers['X-Cache-Invalidated']).toBe('true');
+		});
+
+		it('works without version or invalidation flags', () => {
+			const headers = getVersionedCacheHeaders(
+				'image/png',
+				'"etag789"',
+				'req-test',
+				25,
+				'HIT'
+			);
+			
+			expect(headers['Cache-Control']).toBe('public, immutable, max-age=31536000');
+			expect(headers['X-Cache-Version']).toBeUndefined();
+			expect(headers['X-Cache-Invalidated']).toBeUndefined();
+		});
+
+	});
+
+	describe('EC-2 Integration Testing', () => {
+
+		it('validates full cache invalidation workflow', async () => {
+			const params = { template: 'blog', title: 'Test Article' };
+			
+			// Step 1: Generate ETag with version 1
+			const etag1 = await generateVersionedETag(params, 'v1.0.0');
+			
+			// Step 2: Generate ETag with version 2 (should be different)
+			const etag2 = await generateVersionedETag(params, 'v1.0.1');
+			
+			expect(etag1).not.toBe(etag2);
+			
+			// Step 3: Check invalidation logic
+			const shouldInvalidate = shouldInvalidateCache('v1.0.1', 'v1.0.0');
+			expect(shouldInvalidate).toBe(true);
+			
+			// Step 4: Create invalidation metrics
+			const metrics = createCacheInvalidationMetrics(
+				'req-workflow',
+				'v1.0.0',
+				'v1.0.1',
+				'content_update'
+			);
+			
+			expect(metrics.event).toBe('cache_invalidation');
+			expect(metrics.old_version).toBe('v1.0.0');
+			expect(metrics.new_version).toBe('v1.0.1');
+		});
+
+		it('supports cache invalidation via URL parameter', () => {
+			const searchParams = new URLSearchParams('template=blog&title=Test&v=deploy-2024-01-15');
+			
+			const version = extractCacheVersion(searchParams);
+			const validVersion = validateCacheVersion(version);
+			
+			expect(validVersion).toBe('deploy-2024-01-15');
+			
+			// Simulate cache hit with different version should invalidate
+			const shouldInvalidate = shouldInvalidateCache(validVersion, 'deploy-2024-01-14');
+			expect(shouldInvalidate).toBe(true);
+		});
+
+		it('supports cache invalidation via environment variable', () => {
+			const searchParams = new URLSearchParams('template=minimal&title=Test');
+			const env = { CACHE_VERSION: 'production-v2.1.0' };
+			
+			const version = extractCacheVersion(searchParams, env);
+			expect(version).toBe('production-v2.1.0');
+			
+			// Should invalidate if stored version is different
+			const shouldInvalidate = shouldInvalidateCache(version, 'production-v2.0.0');
+			expect(shouldInvalidate).toBe(true);
+		});
+
 	});
 
 });
