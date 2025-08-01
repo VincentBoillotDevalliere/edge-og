@@ -790,10 +790,10 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             const font = document.getElementById('font').value;
             const emoji = document.getElementById('emoji').value;
             
-            let url = \`${baseUrl}/og?template=\${template}&title=\${title}&description=\${description}&theme=\${theme}&font=\${font}\`;
+            let url = '${baseUrl}/og?template=' + template + '&title=' + title + '&description=' + description + '&theme=' + theme + '&font=' + font;
             
             if (emoji && emoji.trim()) {
-                url += \`&emoji=\${encodeURIComponent(emoji)}\`;
+                url += '&emoji=' + encodeURIComponent(emoji);
             }
             
             document.getElementById('preview-image').src = url;
@@ -861,12 +861,12 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                 
                 if (response.ok) {
                     showResult(resultDiv, 
-                        \`✅ API Key Created Successfully!<br><br>
-                        <strong>🔑 Your API Key:</strong><br>
-                        <code style="background: #2d3748; color: #e2e8f0; padding: 0.5rem; border-radius: 4px; word-break: break-all; display: block; margin: 0.5rem 0;">\${data.key}</code>
-                        <br><strong>⚠️ Important:</strong> Copy this key now - it won't be shown again!<br>
-                        <strong>📊 Quota:</strong> \${quotaLimit.toLocaleString()} requests/month<br>
-                        <button onclick="copyToClipboard('\${data.key}')" class="btn" style="margin-top: 0.5rem; font-size: 0.8rem;">📋 Copy Key</button>\`, 
+                        '✅ API Key Created Successfully!<br><br>' +
+                        '<strong>🔑 Your API Key:</strong><br>' +
+                        '<code style="background: #2d3748; color: #e2e8f0; padding: 0.5rem; border-radius: 4px; word-break: break-all; display: block; margin: 0.5rem 0;">' + data.key + '</code>' +
+                        '<br><strong>⚠️ Important:</strong> Copy this key now - it won\\'t be shown again!<br>' +
+                        '<strong>📊 Quota:</strong> ' + quotaLimit.toLocaleString() + ' requests/month<br>' +
+                        '<button onclick="copyToClipboard(\\'' + data.key + '\\')" class="btn" style="margin-top: 0.5rem; font-size: 0.8rem;">📋 Copy Key</button>', 
                         'success'
                     );
                     
@@ -874,10 +874,10 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                     document.getElementById('keyName').value = '';
                     document.getElementById('userId').value = '';
                 } else {
-                    showResult(resultDiv, \`❌ Error: \${data.error || 'Failed to create API key'}\`, 'error');
+                    showResult(resultDiv, '❌ Error: ' + (data.error || 'Failed to create API key'), 'error');
                 }
             } catch (error) {
-                showResult(resultDiv, \`❌ Network Error: \${error.message}\`, 'error');
+                showResult(resultDiv, '❌ Network Error: ' + error.message, 'error');
             } finally {
                 createBtn.textContent = '🔑 Create API Key';
                 createBtn.disabled = false;
@@ -896,7 +896,7 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             listDiv.innerHTML = '⏳ Loading your API keys...';
             
             try {
-                const response = await fetch(\`${baseUrl}/api/keys?userId=\${encodeURIComponent(userId)}\`);
+                const response = await fetch('${baseUrl}/api/keys?userId=' + encodeURIComponent(userId));
                 const data = await response.json();
                 
                 if (response.ok && data.keys) {
@@ -911,38 +911,37 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                         const statusColor = key.active ? '#22c55e' : '#ef4444';
                         const usageColor = usagePercent > 80 ? '#ef4444' : usagePercent > 60 ? '#f59e0b' : '#22c55e';
                         
-                        keysHtml += \`
-                        <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: white;">
-                            <div style="display: flex; justify-content: between; align-items: start; margin-bottom: 0.5rem;">
-                                <h4 style="margin: 0; color: #2d3748;">\${key.name}</h4>
-                                <span style="background: \${statusColor}; color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">
-                                    \${key.active ? 'Active' : 'Inactive'}
-                                </span>
-                            </div>
-                            <p style="font-size: 0.85rem; color: #666; margin: 0.25rem 0;">
-                                <strong>Key ID:</strong> \${key.id}<br>
-                                <strong>Created:</strong> \${new Date(key.createdAt).toLocaleDateString()}<br>
-                                <strong>Last Used:</strong> \${key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleDateString() : 'Never'}
-                            </p>
-                            <div style="margin: 0.5rem 0;">
-                                <div style="background: #f1f5f9; border-radius: 4px; padding: 0.5rem; font-size: 0.85rem;">
-                                    <strong>Usage:</strong> \${key.quotaUsed.toLocaleString()} / \${key.quotaLimit.toLocaleString()} requests
-                                    <div style="background: #e2e8f0; height: 4px; border-radius: 2px; margin-top: 0.25rem;">
-                                        <div style="background: \${usageColor}; height: 100%; width: \${Math.min(usagePercent, 100)}%; border-radius: 2px;"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            \${key.active ? \`<button onclick="revokeApiKey('\${key.id}', '\${userId}')" class="btn-outline btn" style="font-size: 0.8rem; padding: 0.5rem 1rem;">🗑️ Revoke Key</button>\` : ''}
-                        </div>\`;
+                        keysHtml += '<div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: white;">' +
+                            '<div style="display: flex; justify-content: between; align-items: start; margin-bottom: 0.5rem;">' +
+                                '<h4 style="margin: 0; color: #2d3748;">' + key.name + '</h4>' +
+                                '<span style="background: ' + statusColor + '; color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">' +
+                                    (key.active ? 'Active' : 'Inactive') +
+                                '</span>' +
+                            '</div>' +
+                            '<p style="font-size: 0.85rem; color: #666; margin: 0.25rem 0;">' +
+                                '<strong>Key ID:</strong> ' + key.id + '<br>' +
+                                '<strong>Created:</strong> ' + new Date(key.createdAt).toLocaleDateString() + '<br>' +
+                                '<strong>Last Used:</strong> ' + (key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleDateString() : 'Never') +
+                            '</p>' +
+                            '<div style="margin: 0.5rem 0;">' +
+                                '<div style="background: #f1f5f9; border-radius: 4px; padding: 0.5rem; font-size: 0.85rem;">' +
+                                    '<strong>Usage:</strong> ' + key.quotaUsed.toLocaleString() + ' / ' + key.quotaLimit.toLocaleString() + ' requests' +
+                                    '<div style="background: #e2e8f0; height: 4px; border-radius: 2px; margin-top: 0.25rem;">' +
+                                        '<div style="background: ' + usageColor + '; height: 100%; width: ' + Math.min(usagePercent, 100) + '%; border-radius: 2px;"></div>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                            (key.active ? '<button onclick="revokeApiKey(\\'' + key.id + '\\', \\'' + userId + '\\')" class="btn-outline btn" style="font-size: 0.8rem; padding: 0.5rem 1rem;">🗑️ Revoke Key</button>' : '') +
+                        '</div>';
                     });
                     keysHtml += '</div>';
                     
                     listDiv.innerHTML = keysHtml;
                 } else {
-                    showResult(listDiv, \`❌ Error: \${data.error || 'Failed to load API keys'}\`, 'error');
+                    showResult(listDiv, '❌ Error: ' + (data.error || 'Failed to load API keys'), 'error');
                 }
             } catch (error) {
-                showResult(listDiv, \`❌ Network Error: \${error.message}\`, 'error');
+                showResult(listDiv, '❌ Network Error: ' + error.message, 'error');
             }
         }
         
@@ -952,7 +951,7 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             }
             
             try {
-                const response = await fetch(\`${baseUrl}/api/keys/\${keyId}?userId=\${encodeURIComponent(userId)}\`, {
+                const response = await fetch('${baseUrl}/api/keys/' + keyId + '?userId=' + encodeURIComponent(userId), {
                     method: 'DELETE'
                 });
                 
@@ -964,10 +963,10 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                     document.getElementById('managementUserId').value = userId;
                     loadApiKeys();
                 } else {
-                    alert(\`❌ Error: \${data.error || 'Failed to revoke API key'}\`);
+                    alert('❌ Error: ' + (data.error || 'Failed to revoke API key'));
                 }
             } catch (error) {
-                alert(\`❌ Network Error: \${error.message}\`);
+                alert('❌ Network Error: ' + error.message);
             }
         }
         
@@ -1030,11 +1029,11 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                 
                 if (response.ok) {
                     showResult(resultDiv, 
-                        \`✅ Account created successfully!<br><br>
-                        <strong>Account ID:</strong> \${data.accountId}<br>
-                        <strong>Email:</strong> \${data.email}<br>
-                        <strong>Tier:</strong> \${data.subscriptionTier}<br><br>
-                        A verification token has been sent to your email.\`, 
+                        '✅ Account created successfully!<br><br>' +
+                        '<strong>Account ID:</strong> ' + data.data.accountId + '<br>' +
+                        '<strong>Email:</strong> ' + data.data.email + '<br>' +
+                        '<strong>Tier:</strong> ' + data.data.subscriptionTier + '<br><br>' +
+                        'A verification token has been sent to your email.', 
                         'success'
                     );
                     
@@ -1042,12 +1041,12 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                     document.getElementById('verification-section').style.display = 'block';
                     
                     // Store account ID for verification
-                    window.currentAccountId = data.accountId;
+                    window.currentAccountId = data.data.accountId;
                 } else {
-                    showResult(resultDiv, \`❌ Error: \${data.error || 'Failed to create account'}\`, 'error');
+                    showResult(resultDiv, '❌ Error: ' + (data.error || 'Failed to create account'), 'error');
                 }
             } catch (error) {
-                showResult(resultDiv, \`❌ Network Error: \${error.message}\`, 'error');
+                showResult(resultDiv, '❌ Network Error: ' + error.message, 'error');
             }
         }
         
@@ -1081,9 +1080,9 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                 
                 if (response.ok) {
                     showResult(resultDiv, 
-                        \`✅ Email verified successfully!<br><br>
-                        Your account is now active and ready to use.<br>
-                        You can now create API keys in the Dashboard tab.\`, 
+                        '✅ Email verified successfully!<br><br>' +
+                        'Your account is now active and ready to use.<br>' +
+                        'You can now create API keys in the Dashboard tab.', 
                         'success'
                     );
                     
@@ -1095,10 +1094,10 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                         showTab('dashboard');
                     }, 2000);
                 } else {
-                    showResult(resultDiv, \`❌ Error: \${data.error || 'Failed to verify email'}\`, 'error');
+                    showResult(resultDiv, '❌ Error: ' + (data.error || 'Failed to verify email'), 'error');
                 }
             } catch (error) {
-                showResult(resultDiv, \`❌ Network Error: \${error.message}\`, 'error');
+                showResult(resultDiv, '❌ Network Error: ' + error.message, 'error');
             }
         }
         
@@ -1112,7 +1111,7 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             }
             
             try {
-                const response = await fetch(\`/accounts/\${accountId}\`, {
+                const response = await fetch('/accounts/' + accountId, {
                     method: 'GET',
                 });
                 
@@ -1120,10 +1119,10 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                 
                 if (response.ok) {
                     showResult(resultDiv, 
-                        \`✅ Account loaded successfully!<br><br>
-                        <strong>Email:</strong> \${data.email}<br>
-                        <strong>Tier:</strong> \${data.subscriptionTier}<br>
-                        <strong>Status:</strong> \${data.status}\`, 
+                        '✅ Account loaded successfully!<br><br>' +
+                        '<strong>Email:</strong> ' + data.data.email + '<br>' +
+                        '<strong>Tier:</strong> ' + data.data.subscriptionTier + '<br>' +
+                        '<strong>Status:</strong> ' + data.data.status, 
                         'success'
                     );
                     
@@ -1136,10 +1135,10 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                         showTab('dashboard');
                     }, 1500);
                 } else {
-                    showResult(resultDiv, \`❌ Error: \${data.error || 'Account not found'}\`, 'error');
+                    showResult(resultDiv, '❌ Error: ' + (data.error || 'Account not found'), 'error');
                 }
             } catch (error) {
-                showResult(resultDiv, \`❌ Network Error: \${error.message}\`, 'error');
+                showResult(resultDiv, '❌ Network Error: ' + error.message, 'error');
             }
         }
         
@@ -1154,7 +1153,7 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             
             try {
                 // Load account info
-                const accountResponse = await fetch(\`/accounts/\${accountId}\`);
+                const accountResponse = await fetch('/accounts/' + accountId);
                 const accountData = await accountResponse.json();
                 
                 if (accountResponse.ok) {
@@ -1163,7 +1162,7 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                     document.getElementById('account-status').textContent = accountData.status;
                     
                     // Load quota info
-                    const quotaResponse = await fetch(\`/accounts/\${accountId}/quota\`);
+                    const quotaResponse = await fetch('/accounts/' + accountId + '/quota');
                     const quotaData = await quotaResponse.json();
                     
                     if (quotaResponse.ok) {
@@ -1196,27 +1195,27 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
         
         async function loadApiKeys(accountId) {
             try {
-                const response = await fetch(\`/accounts/\${accountId}/keys\`);
+                const response = await fetch('/accounts/' + accountId + '/keys');
                 const data = await response.json();
                 
                 const keysList = document.getElementById('api-keys-list');
                 
                 if (response.ok && data.keys && data.keys.length > 0) {
-                    keysList.innerHTML = data.keys.map(key => \`
-                        <div class="api-key-item">
-                            <div class="api-key-info">
-                                <div><strong>\${key.name}</strong></div>
-                                <div style="font-size: 0.8rem; color: #666;">
-                                    Created: \${new Date(key.createdAt).toLocaleDateString()}
-                                    | Used: \${key.usageCount.toLocaleString()} times
-                                </div>
-                            </div>
-                            <div class="api-key-actions">
-                                <button class="btn-small" onclick="copyToClipboard('\${key.keyHash}', this)">Copy</button>
-                                <button class="btn-small btn-danger" onclick="revokeApiKey('\${key.id}', '\${accountId}')">Revoke</button>
-                            </div>
-                        </div>
-                    \`).join('');
+                    keysList.innerHTML = data.keys.map(key => 
+                        '<div class="api-key-item">' +
+                            '<div class="api-key-info">' +
+                                '<div><strong>' + key.name + '</strong></div>' +
+                                '<div style="font-size: 0.8rem; color: #666;">' +
+                                    'Created: ' + new Date(key.createdAt).toLocaleDateString() +
+                                    ' | Used: ' + key.usageCount.toLocaleString() + ' times' +
+                                '</div>' +
+                            '</div>' +
+                            '<div class="api-key-actions">' +
+                                '<button class="btn-small" onclick="copyToClipboard(\'' + key.keyHash + '\', this)">Copy</button>' +
+                                '<button class="btn-small btn-danger" onclick="revokeApiKey(\'' + key.id + '\', \'' + accountId + '\')">Revoke</button>' +
+                            '</div>' +
+                        '</div>'
+                    ).join('');
                 } else {
                     keysList.innerHTML = '<p style="color: #666; text-align: center; padding: 1rem;">No API keys found. Create your first key above.</p>';
                 }
@@ -1241,7 +1240,7 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             }
             
             try {
-                const response = await fetch(\`/accounts/\${accountId}/keys\`, {
+                const response = await fetch('/accounts/' + accountId + '/keys', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1255,11 +1254,11 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                 
                 if (response.ok) {
                     showResult(resultDiv, 
-                        \`✅ API Key Created Successfully!<br><br>
-                        <strong>🔑 Your API Key:</strong><br>
-                        <code style="background: #2d3748; color: #e2e8f0; padding: 0.5rem; border-radius: 4px; word-break: break-all; display: block; margin: 0.5rem 0;">\${data.key}</code>
-                        <br><strong>⚠️ Important:</strong> Copy this key now - it won't be shown again!<br>
-                        <button onclick="copyToClipboard('\${data.key}')" class="btn" style="margin-top: 0.5rem; font-size: 0.8rem;">📋 Copy Key</button>\`, 
+                        '✅ API Key Created Successfully!<br><br>' +
+                        '<strong>🔑 Your API Key:</strong><br>' +
+                        '<code style="background: #2d3748; color: #e2e8f0; padding: 0.5rem; border-radius: 4px; word-break: break-all; display: block; margin: 0.5rem 0;">' + data.key + '</code>' +
+                        '<br><strong>⚠️ Important:</strong> Copy this key now - it won\\'t be shown again!<br>' +
+                        '<button onclick="copyToClipboard(\\'' + data.key + '\\')" class="btn" style="margin-top: 0.5rem; font-size: 0.8rem;">📋 Copy Key</button>', 
                         'success'
                     );
                     
@@ -1268,10 +1267,10 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                         loadApiKeys(accountId);
                     }, 2000);
                 } else {
-                    showResult(resultDiv, \`❌ Error: \${data.error || 'Failed to create API key'}\`, 'error');
+                    showResult(resultDiv, '❌ Error: ' + (data.error || 'Failed to create API key'), 'error');
                 }
             } catch (error) {
-                showResult(resultDiv, \`❌ Network Error: \${error.message}\`, 'error');
+                showResult(resultDiv, '❌ Network Error: ' + error.message, 'error');
             }
         }
         
@@ -1281,7 +1280,7 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             }
             
             try {
-                const response = await fetch(\`/accounts/\${accountId}/keys/\${keyId}\`, {
+                const response = await fetch('/accounts/' + accountId + '/keys/' + keyId, {
                     method: 'DELETE'
                 });
                 
