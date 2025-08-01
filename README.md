@@ -82,8 +82,10 @@ GET /og?template={template}&title={title}&{parameters}
 
 ### Other Endpoints
 - `GET /health` - Service health check
-- `POST /dashboard/api-keys` - Create API key
-- `GET /dashboard/user/{userId}` - Usage statistics
+- `POST /api/keys` - Create API key
+- `GET /api/keys?userId={email}` - List user's API keys
+- `DELETE /api/keys/{keyId}?userId={email}` - Revoke API key
+- `GET /api/user/{userId}` - Get user statistics
 
 ## 🚀 Deployment
 

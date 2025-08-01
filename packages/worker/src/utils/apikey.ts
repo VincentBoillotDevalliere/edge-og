@@ -13,8 +13,10 @@ import { log } from './logger';
 export interface ApiKeyData {
 	/** Unique API key identifier */
 	id: string;
-	/** User identifier (email or user ID) */
-	userId: string;
+	/** Management token for this key (used instead of userId) */
+	managementToken: string;
+	/** Optional user identifier (email or user ID) - for display only */
+	userId?: string;
 	/** Encrypted API key hash for validation */
 	keyHash: string;
 	/** Human-readable name for the key */
@@ -34,11 +36,13 @@ export interface ApiKeyData {
 }
 
 /**
- * API Key with plain text value (only returned during creation)
+ * API Key with plain text value and management token (only returned during creation)
  */
 export interface ApiKeyWithSecret extends Omit<ApiKeyData, 'keyHash'> {
 	/** Plain text API key (only available during creation) */
 	key: string;
+	/** Management token for this key (only shown during creation) */
+	managementToken: string;
 }
 
 /**
@@ -52,6 +56,19 @@ export function generateApiKey(): string {
 	).join('').substring(0, 32);
 	
 	return `edgeog_${randomString}`;
+}
+
+/**
+ * Generate a management token for API key management
+ * Format: mgmt_[32 random chars]
+ */
+export function generateManagementToken(): string {
+	const randomBytes = crypto.getRandomValues(new Uint8Array(24));
+	const randomString = Array.from(randomBytes, byte => 
+		byte.toString(36).padStart(2, '0')
+	).join('').substring(0, 32);
+	
+	return `mgmt_${randomString}`;
 }
 
 /**
@@ -107,6 +124,7 @@ export async function createApiKey(
 	const apiKey = generateApiKey();
 	const keyHash = await hashApiKey(apiKey);
 	const keyId = crypto.randomUUID();
+	const managementToken = generateManagementToken();
 	const now = new Date().toISOString();
 	
 	// Calculate next month's reset date
@@ -117,7 +135,8 @@ export async function createApiKey(
 	
 	const apiKeyData: ApiKeyData = {
 		id: keyId,
-		userId,
+		managementToken,
+		userId, // Optional - just for display/organization
 		keyHash,
 		name,
 		createdAt: now,

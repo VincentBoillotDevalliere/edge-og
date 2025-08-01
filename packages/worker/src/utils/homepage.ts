@@ -354,13 +354,13 @@ export function getHomePage(baseUrl: string): string {
                 </div>
                 <div class="card">
                     <h3>🔑 Create API Key</h3>
-                    <div class="code" style="margin: 0.5rem 0; font-size: 0.75rem;">POST /dashboard/api-keys</div>
-                    <p>Create new API keys with custom quotas</p>
+                    <div class="code" style="margin: 0.5rem 0; font-size: 0.75rem;">POST /api/keys</div>
+                    <p>Create new API keys with custom quotas (worker-only)</p>
                 </div>
                 <div class="card">
-                    <h3>📊 Usage Stats</h3>
-                    <div class="code" style="margin: 0.5rem 0; font-size: 0.75rem;">GET /dashboard/user/{userId}</div>
-                    <p>Monitor usage quotas and analytics</p>
+                    <h3>� List API Keys</h3>
+                    <div class="code" style="margin: 0.5rem 0; font-size: 0.75rem;">GET /api/keys?userId={email}</div>
+                    <p>List user's API keys and usage stats</p>
                 </div>
                 <div class="card">
                     <h3>🔍 Health Check</h3>
@@ -427,6 +427,63 @@ ${baseUrl}/og?template=event&title=Conference&date=March%2015&location=NYC
 
 # With API key authentication
 ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
+        </div>
+
+        <!-- API Key Management -->
+        <div class="section">
+            <h2><span class="emoji">🔑</span> API Key Management</h2>
+            <p>Create and manage API keys for production usage with custom quotas and monitoring.</p>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem;">
+                <!-- Create API Key -->
+                <div>
+                    <h3>Create New API Key</h3>
+                    <div class="form-group">
+                        <label for="keyName">Key Name</label>
+                        <input type="text" id="keyName" placeholder="My Project API Key" maxlength="50">
+                    </div>
+                    <div class="form-group">
+                        <label for="userId">User ID (email)</label>
+                        <input type="email" id="userId" placeholder="user@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="quotaLimit">Monthly Quota</label>
+                        <select id="quotaLimit">
+                            <option value="1000">1,000 requests/month (Free)</option>
+                            <option value="10000">10,000 requests/month (Pro)</option>
+                            <option value="100000">100,000 requests/month (Business)</option>
+                            <option value="1000000">1,000,000 requests/month (Enterprise)</option>
+                        </select>
+                    </div>
+                    <button class="btn" onclick="createApiKey()" id="createKeyBtn">
+                        🔑 Create API Key
+                    </button>
+                    <div id="createKeyResult" style="margin-top: 1rem; padding: 1rem; border-radius: 8px; display: none;"></div>
+                </div>
+
+                <!-- Manage API Keys -->
+                <div>
+                    <h3>Manage Existing Keys</h3>
+                    <div class="form-group">
+                        <label for="managementUserId">User ID (email)</label>
+                        <input type="email" id="managementUserId" placeholder="user@example.com">
+                    </div>
+                    <button class="btn-outline btn" onclick="loadApiKeys()">
+                        📋 Load My API Keys
+                    </button>
+                    <div id="apiKeysList" style="margin-top: 1rem;"></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 2rem; padding: 1.5rem; background: #f8f9fa; border-radius: 10px; border-left: 4px solid #667eea;">
+                <h4 style="margin-bottom: 1rem; color: #2d3748;">🔒 Security & Usage</h4>
+                <ul style="color: #4a5568; line-height: 1.8;">
+                    <li><strong>Keep your API key secure</strong> - Never expose it in client-side code</li>
+                    <li><strong>Use environment variables</strong> - Store keys securely in your application</li>
+                    <li><strong>Monitor usage</strong> - Track your quota consumption and request patterns</li>
+                    <li><strong>Revoke when needed</strong> - Remove unused or compromised keys immediately</li>
+                </ul>
+            </div>
         </div>
 
         <!-- Template Showcase -->
@@ -509,6 +566,170 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
                 }
             });
         });
+
+        // API Key Management Functions
+        async function createApiKey() {
+            const keyName = document.getElementById('keyName').value.trim();
+            const userId = document.getElementById('userId').value.trim();
+            const quotaLimit = parseInt(document.getElementById('quotaLimit').value);
+            const resultDiv = document.getElementById('createKeyResult');
+            const createBtn = document.getElementById('createKeyBtn');
+            
+            if (!keyName || !userId) {
+                showResult(resultDiv, 'Please fill in all fields', 'error');
+                return;
+            }
+            
+            if (!userId.includes('@')) {
+                showResult(resultDiv, 'Please enter a valid email address', 'error');
+                return;
+            }
+            
+            createBtn.textContent = '⏳ Creating...';
+            createBtn.disabled = true;
+            
+            try {
+                const response = await fetch('${baseUrl}/api/keys', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: keyName,
+                        userId: userId,
+                        quotaLimit: quotaLimit
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult(resultDiv, 
+                        \`✅ API Key Created Successfully!<br><br>
+                        <strong>🔑 Your API Key:</strong><br>
+                        <code style="background: #2d3748; color: #e2e8f0; padding: 0.5rem; border-radius: 4px; word-break: break-all; display: block; margin: 0.5rem 0;">\${data.key}</code>
+                        <br><strong>⚠️ Important:</strong> Copy this key now - it won't be shown again!<br>
+                        <strong>📊 Quota:</strong> \${quotaLimit.toLocaleString()} requests/month<br>
+                        <button onclick="copyToClipboard('\${data.key}')" class="btn" style="margin-top: 0.5rem; font-size: 0.8rem;">📋 Copy Key</button>\`, 
+                        'success'
+                    );
+                    
+                    // Clear the form
+                    document.getElementById('keyName').value = '';
+                    document.getElementById('userId').value = '';
+                } else {
+                    showResult(resultDiv, \`❌ Error: \${data.error || 'Failed to create API key'}\`, 'error');
+                }
+            } catch (error) {
+                showResult(resultDiv, \`❌ Network Error: \${error.message}\`, 'error');
+            } finally {
+                createBtn.textContent = '🔑 Create API Key';
+                createBtn.disabled = false;
+            }
+        }
+        
+        async function loadApiKeys() {
+            const userId = document.getElementById('managementUserId').value.trim();
+            const listDiv = document.getElementById('apiKeysList');
+            
+            if (!userId) {
+                showResult(listDiv, 'Please enter your email address', 'error');
+                return;
+            }
+            
+            listDiv.innerHTML = '⏳ Loading your API keys...';
+            
+            try {
+                const response = await fetch(\`${baseUrl}/api/keys?userId=\${encodeURIComponent(userId)}\`);
+                const data = await response.json();
+                
+                if (response.ok && data.keys) {
+                    if (data.keys.length === 0) {
+                        listDiv.innerHTML = '<p style="color: #666; text-align: center; padding: 2rem;">No API keys found for this user.</p>';
+                        return;
+                    }
+                    
+                    let keysHtml = '<div style="margin-top: 1rem;">';
+                    data.keys.forEach(key => {
+                        const usagePercent = key.quotaLimit > 0 ? (key.quotaUsed / key.quotaLimit * 100).toFixed(1) : 0;
+                        const statusColor = key.active ? '#22c55e' : '#ef4444';
+                        const usageColor = usagePercent > 80 ? '#ef4444' : usagePercent > 60 ? '#f59e0b' : '#22c55e';
+                        
+                        keysHtml += \`
+                        <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: white;">
+                            <div style="display: flex; justify-content: between; align-items: start; margin-bottom: 0.5rem;">
+                                <h4 style="margin: 0; color: #2d3748;">\${key.name}</h4>
+                                <span style="background: \${statusColor}; color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">
+                                    \${key.active ? 'Active' : 'Inactive'}
+                                </span>
+                            </div>
+                            <p style="font-size: 0.85rem; color: #666; margin: 0.25rem 0;">
+                                <strong>Key ID:</strong> \${key.id}<br>
+                                <strong>Created:</strong> \${new Date(key.createdAt).toLocaleDateString()}<br>
+                                <strong>Last Used:</strong> \${key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleDateString() : 'Never'}
+                            </p>
+                            <div style="margin: 0.5rem 0;">
+                                <div style="background: #f1f5f9; border-radius: 4px; padding: 0.5rem; font-size: 0.85rem;">
+                                    <strong>Usage:</strong> \${key.quotaUsed.toLocaleString()} / \${key.quotaLimit.toLocaleString()} requests
+                                    <div style="background: #e2e8f0; height: 4px; border-radius: 2px; margin-top: 0.25rem;">
+                                        <div style="background: \${usageColor}; height: 100%; width: \${Math.min(usagePercent, 100)}%; border-radius: 2px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            \${key.active ? \`<button onclick="revokeApiKey('\${key.id}', '\${userId}')" class="btn-outline btn" style="font-size: 0.8rem; padding: 0.5rem 1rem;">🗑️ Revoke Key</button>\` : ''}
+                        </div>\`;
+                    });
+                    keysHtml += '</div>';
+                    
+                    listDiv.innerHTML = keysHtml;
+                } else {
+                    showResult(listDiv, \`❌ Error: \${data.error || 'Failed to load API keys'}\`, 'error');
+                }
+            } catch (error) {
+                showResult(listDiv, \`❌ Network Error: \${error.message}\`, 'error');
+            }
+        }
+        
+        async function revokeApiKey(keyId, userId) {
+            if (!confirm('Are you sure you want to revoke this API key? This action cannot be undone.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(\`${baseUrl}/api/keys/\${keyId}?userId=\${encodeURIComponent(userId)}\`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('✅ API key revoked successfully!');
+                    // Reload the keys list
+                    document.getElementById('managementUserId').value = userId;
+                    loadApiKeys();
+                } else {
+                    alert(\`❌ Error: \${data.error || 'Failed to revoke API key'}\`);
+                }
+            } catch (error) {
+                alert(\`❌ Network Error: \${error.message}\`);
+            }
+        }
+        
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('✅ API key copied to clipboard!');
+            }).catch(() => {
+                alert('❌ Failed to copy to clipboard. Please copy manually.');
+            });
+        }
+        
+        function showResult(element, message, type) {
+            element.style.display = 'block';
+            element.style.background = type === 'success' ? '#f0f9ff' : '#fef2f2';
+            element.style.border = type === 'success' ? '1px solid #22c55e' : '1px solid #ef4444';
+            element.style.color = type === 'success' ? '#166534' : '#dc2626';
+            element.innerHTML = message;
+        }
     </script>
 </body>
 </html>`;

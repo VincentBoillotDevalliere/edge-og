@@ -47,6 +47,11 @@ export default {
 				return await handleDashboardRequest(request, url, requestId, env);
 			}
 
+			// AQ-1: Clean API routes for API key management (worker-only architecture)
+			if (url.pathname.startsWith('/api')) {
+				return await handleApiRequest(request, url, requestId, env);
+			}
+
 			// Only handle GET requests for non-dashboard routes
 			if (request.method !== 'GET') {
 				throw new WorkerError('Method not allowed', 405, requestId);
@@ -689,6 +694,198 @@ async function handleDashboardRequest(
 			event: 'dashboard_request_error',
 			request_id: requestId,
 			path,
+			method: request.method,
+			error: error instanceof Error ? error.message : String(error),
+		});
+
+		return new Response(JSON.stringify({
+			error: 'Internal server error',
+			request_id: requestId,
+		}), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
+		});
+	}
+}
+
+/**
+ * Handle clean API requests for worker-only architecture
+ * Routes:
+ * - POST /api/keys - Create new API key
+ * - GET /api/keys?userId={userId} - List user's API keys  
+ * - DELETE /api/keys/:id - Revoke API key
+ * - GET /api/user/:userId - Get user info with quota
+ */
+async function handleApiRequest(
+	request: Request,
+	url: URL,
+	requestId: string,
+	env?: Env
+): Promise<Response> {
+	const { createApiKey, listApiKeys, revokeApiKey, validateApiKey } = await import('./utils/apikey');
+
+	// CORS headers for API requests
+	const corsHeaders = {
+		'Access-Control-Allow-Origin': '*',
+		'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+		'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-ID',
+	};
+
+	// Handle preflight requests
+	if (request.method === 'OPTIONS') {
+		return new Response(null, {
+			status: 204,
+			headers: corsHeaders,
+		});
+	}
+
+	try {
+		const path = url.pathname;
+
+		// POST /api/keys - Create new API key
+		if (path === '/api/keys' && request.method === 'POST') {
+			const body = await request.json() as {
+				userId: string;
+				name: string;
+				quotaLimit?: number;
+			};
+			
+			if (!body.name || !body.userId) {
+				return new Response(JSON.stringify({
+					error: 'Missing required fields: name, userId',
+					request_id: requestId,
+				}), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+
+			const apiKeyData = await createApiKey(
+				body.userId,
+				body.name,
+				body.quotaLimit || 1000,
+				env
+			);
+
+			log({
+				event: 'api_key_created',
+				request_id: requestId,
+				user_id: body.userId,
+				key_name: body.name,
+				quota_limit: body.quotaLimit || 1000,
+			});
+
+			return new Response(JSON.stringify(apiKeyData), {
+				status: 201,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
+			});
+		}
+
+		// GET /api/keys?userId=... - List API keys for user
+		if (path === '/api/keys' && request.method === 'GET') {
+			const userId = url.searchParams.get('userId');
+			
+			if (!userId) {
+				return new Response(JSON.stringify({
+					error: 'Missing userId parameter',
+					request_id: requestId,
+				}), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+
+			const keys = await listApiKeys(userId, env);
+
+			return new Response(JSON.stringify({ keys }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
+			});
+		}
+
+		// DELETE /api/keys/:keyId - Revoke API key
+		const revokeMatch = path.match(/^\/api\/keys\/([^/]+)$/);
+		if (revokeMatch && request.method === 'DELETE') {
+			const keyId = revokeMatch[1];
+			const userId = url.searchParams.get('userId');
+			
+			if (!userId) {
+				return new Response(JSON.stringify({
+					error: 'Missing userId parameter - required for security verification',
+					request_id: requestId,
+				}), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+			
+			const revoked = await revokeApiKey(keyId, userId, env);
+
+			log({
+				event: 'api_key_revoked',
+				request_id: requestId,
+				key_id: keyId,
+				user_id: userId,
+				success: revoked,
+			});
+
+			return new Response(JSON.stringify({
+				success: revoked,
+				message: revoked ? 'API key revoked successfully' : 'API key not found or access denied',
+				request_id: requestId,
+			}), {
+				status: revoked ? 200 : 404,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
+			});
+		}
+
+		// GET /api/user/:userId - Get user info with current quota usage
+		const userMatch = path.match(/^\/api\/user\/([^/]+)$/);
+		if (userMatch && request.method === 'GET') {
+			const userId = decodeURIComponent(userMatch[1]);
+			const keys = await listApiKeys(userId, env);
+			
+			// Calculate total usage across all active keys
+			const totalUsage = keys
+				.filter(key => key.active)
+				.reduce((sum, key) => sum + key.quotaUsed, 0);
+			const totalQuota = keys
+				.filter(key => key.active)
+				.reduce((sum, key) => sum + key.quotaLimit, 0);
+
+			return new Response(JSON.stringify({
+				userId,
+				totalQuota,
+				totalUsage,
+				activeKeys: keys.filter(key => key.active).length,
+				totalKeys: keys.length,
+				request_id: requestId,
+			}), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
+			});
+		}
+
+		// Route not found
+		return new Response(JSON.stringify({
+			error: 'API endpoint not found',
+			available_endpoints: [
+				'POST /api/keys - Create API key',
+				'GET /api/keys?userId={userId} - List user keys',
+				'DELETE /api/keys/{keyId} - Revoke API key',
+				'GET /api/user/{userId} - Get user info'
+			],
+			request_id: requestId,
+		}), {
+			status: 404,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
+		});
+
+	} catch (error) {
+		log({
+			event: 'api_request_error',
+			request_id: requestId,
+			path: url.pathname,
 			method: request.method,
 			error: error instanceof Error ? error.message : String(error),
 		});
