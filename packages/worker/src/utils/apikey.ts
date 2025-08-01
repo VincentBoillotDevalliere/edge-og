@@ -8,14 +8,16 @@ export {};
 import { log } from './logger';
 
 /**
- * API Key metadata structure
+ * API Key metadata structure - Enhanced for account-based system
  */
 export interface ApiKeyData {
 	/** Unique API key identifier */
 	id: string;
-	/** Management token for this key (used instead of userId) */
+	/** Account ID this key belongs to */
+	accountId: string;
+	/** Management token for this key */
 	managementToken: string;
-	/** Optional user identifier (email or user ID) - for display only */
+	/** Legacy user ID field - deprecated, use accountId */
 	userId?: string;
 	/** Encrypted API key hash for validation */
 	keyHash: string;
@@ -27,11 +29,11 @@ export interface ApiKeyData {
 	lastUsedAt?: string;
 	/** Whether the key is active */
 	active: boolean;
-	/** Current quota usage */
+	/** Current quota usage - now tracked at account level */
 	quotaUsed: number;
-	/** Monthly quota limit */
+	/** Monthly quota limit - now determined by account tier */
 	quotaLimit: number;
-	/** Quota reset date */
+	/** Quota reset date - now managed at account level */
 	quotaResetAt: string;
 }
 
@@ -113,10 +115,10 @@ export async function verifyApiKey(apiKey: string, storedHash: string): Promise<
 }
 
 /**
- * Create a new API key for a user
+ * Create a new API key for an account
  */
 export async function createApiKey(
-	userId: string,
+	accountIdOrUserId: string,
 	name: string,
 	quotaLimit: number = 1000,
 	env?: { API_KEYS?: KVNamespace }
@@ -135,8 +137,9 @@ export async function createApiKey(
 	
 	const apiKeyData: ApiKeyData = {
 		id: keyId,
+		accountId: accountIdOrUserId, // This could be accountId or legacy userId
 		managementToken,
-		userId, // Optional - just for display/organization
+		userId: accountIdOrUserId, // Keep for backward compatibility
 		keyHash,
 		name,
 		createdAt: now,
@@ -150,16 +153,26 @@ export async function createApiKey(
 	if (env?.API_KEYS) {
 		await env.API_KEYS.put(`key:${keyId}`, JSON.stringify(apiKeyData));
 		
-		// Update user mapping - get existing keys and append new one
-		const existingUserData = await env.API_KEYS.get(`user:${userId}`);
+		// Update account/user mapping - handle both legacy userId and new accountId
+		const mappingKey = `account:${accountIdOrUserId}:keys`;
+		const existingUserData = await env.API_KEYS.get(mappingKey);
 		const existingKeys = existingUserData ? JSON.parse(existingUserData) : [];
 		existingKeys.push(keyId);
-		await env.API_KEYS.put(`user:${userId}`, JSON.stringify(existingKeys));
+		await env.API_KEYS.put(mappingKey, JSON.stringify(existingKeys));
+
+		// Also maintain legacy user mapping for backward compatibility
+		const legacyMappingKey = `user:${accountIdOrUserId}`;
+		const legacyUserData = await env.API_KEYS.get(legacyMappingKey);
+		const legacyKeys = legacyUserData ? JSON.parse(legacyUserData) : [];
+		if (!legacyKeys.includes(keyId)) {
+			legacyKeys.push(keyId);
+			await env.API_KEYS.put(legacyMappingKey, JSON.stringify(legacyKeys));
+		}
 	}
 	
 	log({
 		event: 'api_key_created',
-		user_id: userId,
+		account_id: accountIdOrUserId,
 		key_id: keyId,
 		quota_limit: quotaLimit,
 	});
@@ -171,7 +184,7 @@ export async function createApiKey(
 }
 
 /**
- * Validate an API key and return associated data
+ * Validate an API key and return associated data with account integration
  */
 export async function validateApiKey(
 	apiKey: string,
@@ -212,6 +225,12 @@ export async function validateApiKey(
 				apiKeyData.lastUsedAt = new Date().toISOString();
 				await env.API_KEYS.put(keyItem.name, JSON.stringify(apiKeyData));
 				
+				// Update account's last active timestamp if we have account integration
+				if (apiKeyData.accountId) {
+					const { updateLastActive } = await import('./account');
+					await updateLastActive(apiKeyData.accountId, env);
+				}
+				
 				return apiKeyData;
 			}
 		}
@@ -227,10 +246,10 @@ export async function validateApiKey(
 }
 
 /**
- * List API keys for a user
+ * List API keys for an account (with backward compatibility for userId)
  */
 export async function listApiKeys(
-	userId: string,
+	accountIdOrUserId: string,
 	env?: { API_KEYS?: KVNamespace }
 ): Promise<Omit<ApiKeyData, 'keyHash'>[]> {
 	if (!env?.API_KEYS) {
@@ -238,7 +257,14 @@ export async function listApiKeys(
 	}
 	
 	try {
-		const userKeysData = await env.API_KEYS.get(`user:${userId}`);
+		// Try new account-based mapping first
+		let userKeysData = await env.API_KEYS.get(`account:${accountIdOrUserId}:keys`);
+		
+		// Fall back to legacy user mapping if account mapping doesn't exist
+		if (!userKeysData) {
+			userKeysData = await env.API_KEYS.get(`user:${accountIdOrUserId}`);
+		}
+		
 		if (!userKeysData) return [];
 		
 		const keyIds: string[] = JSON.parse(userKeysData);
@@ -256,7 +282,7 @@ export async function listApiKeys(
 	} catch (error) {
 		log({
 			event: 'api_keys_list_error',
-			user_id: userId,
+			account_id: accountIdOrUserId,
 			error: error instanceof Error ? error.message : String(error),
 		});
 		return [];
@@ -264,11 +290,11 @@ export async function listApiKeys(
 }
 
 /**
- * Revoke an API key
+ * Revoke an API key (with account and backward compatibility)
  */
 export async function revokeApiKey(
 	keyId: string,
-	userId: string,
+	accountIdOrUserId: string,
 	env?: { API_KEYS?: KVNamespace }
 ): Promise<boolean> {
 	if (!env?.API_KEYS) {
@@ -281,12 +307,16 @@ export async function revokeApiKey(
 		
 		const apiKeyData: ApiKeyData = JSON.parse(keyData);
 		
-		// Verify the key belongs to the user
-		if (apiKeyData.userId !== userId) {
+		// Verify the key belongs to the account/user (check both accountId and legacy userId)
+		const belongsToAccount = apiKeyData.accountId === accountIdOrUserId;
+		const belongsToUser = apiKeyData.userId === accountIdOrUserId;
+		
+		if (!belongsToAccount && !belongsToUser) {
 			log({
 				event: 'api_key_revoke_unauthorized',
 				key_id: keyId,
-				user_id: userId,
+				provided_id: accountIdOrUserId,
+				actual_account_id: apiKeyData.accountId,
 				actual_user_id: apiKeyData.userId,
 			});
 			return false;
@@ -299,7 +329,7 @@ export async function revokeApiKey(
 		log({
 			event: 'api_key_revoked',
 			key_id: keyId,
-			user_id: userId,
+			account_id: accountIdOrUserId,
 		});
 		
 		return true;
@@ -307,7 +337,7 @@ export async function revokeApiKey(
 		log({
 			event: 'api_key_revoke_error',
 			key_id: keyId,
-			user_id: userId,
+			account_id: accountIdOrUserId,
 			error: error instanceof Error ? error.message : String(error),
 		});
 		return false;

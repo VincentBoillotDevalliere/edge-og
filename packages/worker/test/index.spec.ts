@@ -39,7 +39,11 @@ describe('Edge-OG Worker', () => {
 
 	describe('Health check', () => {
 		it('serves API info JSON at root', async () => {
-			const request = new IncomingRequest('https://example.com/');
+			const request = new IncomingRequest('https://example.com/', {
+				headers: {
+					'Accept': 'application/json'
+				}
+			});
 			const ctx = createExecutionContext();
 			const response = await worker.fetch(request, env, ctx);
 			await waitOnExecutionContext(ctx);
@@ -757,6 +761,175 @@ describe('Edge-OG Worker', () => {
 
 	});
 
+	describe('Enhanced AQ-1: Account Management Endpoints', () => {
+		describe('POST /accounts/register', () => {
+			it('creates new account successfully', async () => {
+				const requestBody = {
+					email: 'newuser@example.com'
+				};
+
+				const request = new IncomingRequest('https://example.com/accounts/register', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(requestBody)
+				});
+
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+
+				expect(response.status).toBe(201);
+				const data = await response.json() as any;
+				expect(data.success).toBe(true);
+				expect(data.data.email).toBe('newuser@example.com');
+				expect(data.data.accountId).toBeDefined();
+				expect(data.data.verificationToken).toBeDefined();
+			});
+
+			it('rejects invalid email formats', async () => {
+				const requestBody = {
+					email: 'invalid-email'
+				};
+
+				const request = new IncomingRequest('https://example.com/accounts/register', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(requestBody)
+				});
+
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+
+				expect(response.status).toBe(400);
+				const data = await response.json() as any;
+				expect(data.error).toContain('Invalid email format');
+			});
+
+			it('prevents duplicate account creation', async () => {
+				const email = 'duplicate@example.com';
+				
+				// Create first account
+				const firstRequest = new IncomingRequest('https://example.com/accounts/register', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ email })
+				});
+
+				const firstCtx = createExecutionContext();
+				await worker.fetch(firstRequest, env, firstCtx);
+				await waitOnExecutionContext(firstCtx);
+
+				// Try to create duplicate
+				const duplicateRequest = new IncomingRequest('https://example.com/accounts/register', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ email })
+				});
+
+				const duplicateCtx = createExecutionContext();
+				const response = await worker.fetch(duplicateRequest, env, duplicateCtx);
+				await waitOnExecutionContext(duplicateCtx);
+
+				expect(response.status).toBe(400);
+				const data = await response.json() as any;
+				expect(data.error).toContain('already exists');
+			});
+		});
+
+		describe('POST /accounts/verify', () => {
+			it('verifies email with valid token', async () => {
+				// First create account
+				const createRequest = new IncomingRequest('https://example.com/accounts/register', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ email: 'verify@example.com' })
+				});
+
+				const createCtx = createExecutionContext();
+				const createResponse = await worker.fetch(createRequest, env, createCtx);
+				await waitOnExecutionContext(createCtx);
+
+				const createData = await createResponse.json() as any;
+				const verificationToken = createData.data.verificationToken;
+
+				// Now verify
+				const verifyRequest = new IncomingRequest('https://example.com/accounts/verify', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ token: verificationToken })
+				});
+
+				const verifyCtx = createExecutionContext();
+				const response = await worker.fetch(verifyRequest, env, verifyCtx);
+				await waitOnExecutionContext(verifyCtx);
+
+				expect(response.status).toBe(200);
+				const data = await response.json() as any;
+				expect(data.success).toBe(true);
+				expect(data.data.emailVerified).toBe(true);
+			});
+
+			it('rejects invalid tokens', async () => {
+				const request = new IncomingRequest('https://example.com/accounts/verify', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ token: 'invalid-token' })
+				});
+
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+
+				expect(response.status).toBe(400);
+				const data = await response.json() as any;
+				expect(data.error).toContain('Invalid or expired');
+			});
+		});
+
+		describe('GET /accounts/:accountId', () => {
+			it('returns account information', async () => {
+				// Create account first
+				const createRequest = new IncomingRequest('https://example.com/accounts/register', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ email: 'getaccount@example.com' })
+				});
+
+				const createCtx = createExecutionContext();
+				const createResponse = await worker.fetch(createRequest, env, createCtx);
+				await waitOnExecutionContext(createCtx);
+
+				const createData = await createResponse.json() as any;
+				const accountId = createData.data.accountId;
+
+				// Get account
+				const getRequest = new IncomingRequest(`https://example.com/accounts/${accountId}`);
+				const getCtx = createExecutionContext();
+				const response = await worker.fetch(getRequest, env, getCtx);
+				await waitOnExecutionContext(getCtx);
+
+				expect(response.status).toBe(200);
+				const data = await response.json() as any;
+				expect(data.success).toBe(true);
+				expect(data.data.id).toBe(accountId);
+				expect(data.data.email).toBe('getaccount@example.com');
+				expect(data.data).not.toHaveProperty('settings'); // Sensitive data excluded
+			});
+
+			it('returns 404 for non-existent accounts', async () => {
+				const request = new IncomingRequest('https://example.com/accounts/non-existent-id');
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+
+				expect(response.status).toBe(404);
+				const data = await response.json() as any;
+				expect(data.error).toContain('not found');
+			});
+		});
+	});
+
 	describe('AQ-1: Dashboard API Endpoints', () => {
 		describe('POST /dashboard/api-keys', () => {
 			it('creates new API key successfully', async () => {
@@ -873,7 +1046,7 @@ describe('Edge-OG Worker', () => {
 
 				expect(response.status).toBe(400);
 				const data = await response.json() as any;
-				expect(data.error).toContain('Missing userId parameter');
+				expect(data.error).toContain('Missing accountId or userId parameter');
 			});
 		});
 

@@ -47,6 +47,11 @@ export default {
 				return await handleDashboardRequest(request, url, requestId, env);
 			}
 
+			// AQ-1: Account management endpoints
+			if (url.pathname.startsWith('/accounts')) {
+				return await handleAccountRequest(request, url, requestId, env);
+			}
+
 			// AQ-1: Clean API routes for API key management (worker-only architecture)
 			if (url.pathname.startsWith('/api')) {
 				return await handleApiRequest(request, url, requestId, env);
@@ -70,8 +75,41 @@ export default {
 				return response;
 			}
 
-			// Homepage with interactive API builder
+			// Homepage with interactive API builder or API info JSON
 			if (url.pathname === '/') {
+				const acceptHeader = request.headers.get('accept') || '';
+				
+				// Return JSON for API clients, HTML for browsers
+				if (acceptHeader.includes('application/json')) {
+					return new Response(JSON.stringify({
+						service: 'Edge-OG API',
+						version: '1.0.0',
+						description: 'High-performance Open Graph image generation API',
+						endpoints: {
+							generate: '/og',
+							health: '/health',
+							dashboard: '/dashboard',
+							accounts: '/accounts'
+						},
+						features: [
+							'11 professional templates',
+							'Custom fonts support',
+							'Edge caching & CDN',
+							'Account management',
+							'API key authentication',
+							'Usage quotas & analytics'
+						],
+						documentation: `${url.protocol}//${url.host}/`,
+						request_id: requestId
+					}, null, 2), {
+						headers: {
+							'Content-Type': 'application/json',
+							'Cache-Control': 'public, max-age=3600',
+						},
+					});
+				}
+
+				// Return HTML homepage for browsers
 				const baseUrl = `${url.protocol}//${url.host}`;
 				return new Response(getHomePage(baseUrl), {
 					headers: {
@@ -149,6 +187,13 @@ async function handleOGImageGeneration(
 	// AQ-1: API Key Authentication
 	const { validateApiKey, incrementQuotaUsage, hasExceededQuota } = await import('./utils/apikey');
 	
+	// Initialize quota info structure for later use
+	let quotaInfo = {
+		limit: 1000, // Default free tier
+		used: 0,
+		resetAt: new Date().toISOString()
+	};
+	
 	// Extract API key from Authorization header or query parameter
 	const authHeader = request.headers.get('Authorization');
 	const apiKeyParam = url.searchParams.get('api_key');
@@ -170,25 +215,53 @@ async function handleOGImageGeneration(
 			throw new WorkerError('Invalid API key', 401, requestId);
 		}
 
-		// AQ-2: Check quota limits (soft blocking)
-		const quotaExceeded = await hasExceededQuota(apiKeyData.id, env);
+		// AQ-2: Check quota limits (account-based with backward compatibility)
+		let quotaExceeded = false;
+		
+		// Initialize with API key default values
+		quotaInfo = {
+			limit: apiKeyData.quotaLimit,
+			used: apiKeyData.quotaUsed,
+			resetAt: apiKeyData.quotaResetAt
+		};
+
+		// If we have an accountId, use account-based quota checking
+		if (apiKeyData.accountId) {
+			const { hasAccountExceededQuota, getAccount, getAccountQuotaLimit } = await import('./utils/account');
+			quotaExceeded = await hasAccountExceededQuota(apiKeyData.accountId, env);
+			
+			// Get account info for more accurate quota reporting
+			const account = await getAccount(apiKeyData.accountId, env);
+			if (account) {
+				quotaInfo = {
+					limit: getAccountQuotaLimit(account.subscriptionTier),
+					used: account.totalQuotaUsed,
+					resetAt: account.quotaResetDate
+				};
+			}
+		} else {
+			// Fall back to legacy per-key quota checking
+			quotaExceeded = await hasExceededQuota(apiKeyData.id, env);
+		}
+
 		if (quotaExceeded) {
 			log({
 				event: 'quota_exceeded',
 				request_id: requestId,
+				account_id: apiKeyData.accountId,
 				user_id: apiKeyData.userId,
 				key_id: apiKeyData.id,
-				quota_used: apiKeyData.quotaUsed,
-				quota_limit: apiKeyData.quotaLimit,
+				quota_used: quotaInfo.used,
+				quota_limit: quotaInfo.limit,
 			});
 
 			// AQ-2: HTTP 429 after quota exceeded
 			return new Response(JSON.stringify({
 				error: 'Quota exceeded',
-				message: `You have exceeded your quota of ${apiKeyData.quotaLimit} images per month. Current usage: ${apiKeyData.quotaUsed}`,
-				quota_limit: apiKeyData.quotaLimit,
-				quota_used: apiKeyData.quotaUsed,
-				quota_reset_at: apiKeyData.quotaResetAt,
+				message: `You have exceeded your quota of ${quotaInfo.limit} images per month. Current usage: ${quotaInfo.used}`,
+				quota_limit: quotaInfo.limit,
+				quota_used: quotaInfo.used,
+				quota_reset_at: quotaInfo.resetAt,
 				request_id: requestId,
 			}), {
 				status: 429,
@@ -318,33 +391,45 @@ async function handleOGImageGeneration(
 		headers['X-Fallback-Reason'] = 'PNG conversion not available in development environment';
 	}
 
-	// AQ-1: Increment quota usage after successful image generation
+	// AQ-1: Increment quota usage after successful image generation (account-based)
 	if (apiKeyData) {
 		// Use execution context to increment quota asynchronously (don't block response)
 		ctx.waitUntil(
-			incrementQuotaUsage(apiKeyData.id, 1, env).then(success => {
+			(async () => {
+				let success = false;
+
+				// If we have an accountId, use account-based quota tracking
+				if (apiKeyData.accountId) {
+					const { updateAccountQuota } = await import('./utils/account');
+					success = await updateAccountQuota(apiKeyData.accountId, 1, env);
+				} else {
+					// Fall back to legacy per-key quota tracking
+					success = await incrementQuotaUsage(apiKeyData.id, 1, env);
+				}
+
 				if (success) {
 					log({
 						event: 'quota_incremented',
 						request_id: requestId,
+						account_id: apiKeyData.accountId,
 						user_id: apiKeyData.userId,
 						key_id: apiKeyData.id,
-						quota_used: apiKeyData.quotaUsed + 1,
 					});
 				} else {
 					log({
 						event: 'quota_increment_failed',
 						request_id: requestId,
+						account_id: apiKeyData.accountId,
 						key_id: apiKeyData.id,
 					});
 				}
-			})
+			})()
 		);
 
-		// Add quota headers to response
-		headers['X-RateLimit-Limit'] = apiKeyData.quotaLimit.toString();
-		headers['X-RateLimit-Remaining'] = Math.max(0, apiKeyData.quotaLimit - apiKeyData.quotaUsed - 1).toString();
-		headers['X-RateLimit-Reset-At'] = apiKeyData.quotaResetAt;
+		// Add quota headers to response (using current quota info)
+		headers['X-RateLimit-Limit'] = quotaInfo.limit.toString();
+		headers['X-RateLimit-Remaining'] = Math.max(0, quotaInfo.limit - quotaInfo.used - 1).toString();
+		headers['X-RateLimit-Reset-At'] = quotaInfo.resetAt;
 	}
 
 	// Return with EC-1 compliant caching headers and EC-2 invalidation support
@@ -492,26 +577,25 @@ function validateOGParams(searchParams: URLSearchParams): {
 }
 
 /**
- * Handle dashboard API requests for API key management (AQ-1)
+ * Handle account management requests (Enhanced AQ-1)
  * Endpoints:
- * - POST /dashboard/api-keys - Create new API key
- * - GET /dashboard/api-keys - List user's API keys  
- * - DELETE /dashboard/api-keys/:id - Revoke API key
- * - GET /dashboard/user/:userId - Get user info with quota
+ * - POST /accounts/register - Create new account with email verification
+ * - POST /accounts/verify - Verify email with token
+ * - GET /accounts/:accountId - Get account information
  */
-async function handleDashboardRequest(
+async function handleAccountRequest(
 	request: Request,
 	url: URL,
 	requestId: string,
 	env?: Env
 ): Promise<Response> {
-	const { createApiKey, listApiKeys, revokeApiKey, validateApiKey } = await import('./utils/apikey');
+	const { createAccount, verifyEmail, getAccount, getAccountByEmail } = await import('./utils/account');
 
-	// CORS headers for dashboard requests
+	// CORS headers for account requests
 	const corsHeaders = {
-		'Access-Control-Allow-Origin': '*', // In production, restrict this to your dashboard domain
-		'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-		'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-ID',
+		'Access-Control-Allow-Origin': '*', // In production, restrict this to your frontend domain
+		'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+		'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 	};
 
 	// Handle preflight requests
@@ -525,17 +609,222 @@ async function handleDashboardRequest(
 	const path = url.pathname;
 
 	try {
-		// POST /dashboard/api-keys - Create new API key (AQ-1: Main endpoint)
+		// POST /accounts/register - Create new account
+		if (path === '/accounts/register' && request.method === 'POST') {
+			const body = await request.json() as {
+				email: string;
+			};
+
+			if (!body.email) {
+				return new Response(JSON.stringify({
+					error: 'Missing required field: email',
+					request_id: requestId,
+				}), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+
+			try {
+				const accountResponse = await createAccount(body.email, env);
+
+				log({
+					event: 'account_register_success',
+					request_id: requestId,
+					email: body.email,
+					account_id: accountResponse.account.id,
+				});
+
+				// In production, you'd send an email here instead of returning the token
+				return new Response(JSON.stringify({
+					success: true,
+					data: {
+						accountId: accountResponse.account.id,
+						email: accountResponse.account.email,
+						verificationToken: accountResponse.verificationToken, // Remove in production
+						message: accountResponse.message
+					},
+					request_id: requestId,
+				}), {
+					status: 201,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+
+			} catch (error) {
+				const errorMessage = error instanceof Error ? error.message : 'Account creation failed';
+				
+				return new Response(JSON.stringify({
+					error: errorMessage,
+					request_id: requestId,
+				}), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+		}
+
+		// POST /accounts/verify - Verify email with token
+		if (path === '/accounts/verify' && request.method === 'POST') {
+			const body = await request.json() as {
+				token: string;
+			};
+
+			if (!body.token) {
+				return new Response(JSON.stringify({
+					error: 'Missing required field: token',
+					request_id: requestId,
+				}), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+
+			try {
+				const account = await verifyEmail(body.token, env);
+
+				log({
+					event: 'account_verify_success',
+					request_id: requestId,
+					account_id: account.id,
+					email: account.email,
+				});
+
+				return new Response(JSON.stringify({
+					success: true,
+					data: {
+						accountId: account.id,
+						email: account.email,
+						emailVerified: account.emailVerified,
+						subscriptionTier: account.subscriptionTier
+					},
+					message: 'Email verified successfully',
+					request_id: requestId,
+				}), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+
+			} catch (error) {
+				const errorMessage = error instanceof Error ? error.message : 'Email verification failed';
+				
+				return new Response(JSON.stringify({
+					error: errorMessage,
+					request_id: requestId,
+				}), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+		}
+
+		// GET /accounts/:accountId - Get account information
+		const accountMatch = path.match(/^\/accounts\/([^/]+)$/);
+		if (accountMatch && request.method === 'GET') {
+			const accountId = accountMatch[1];
+
+			const account = await getAccount(accountId, env);
+			if (!account) {
+				return new Response(JSON.stringify({
+					error: 'Account not found',
+					request_id: requestId,
+				}), {
+					status: 404,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+
+			// Don't include sensitive information in response
+			const { settings, ...publicAccountData } = account;
+
+			return new Response(JSON.stringify({
+				success: true,
+				data: publicAccountData,
+				request_id: requestId,
+			}), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
+			});
+		}
+
+		// 404 for unmatched account routes
+		return new Response(JSON.stringify({
+			error: 'Account endpoint not found',
+			request_id: requestId,
+		}), {
+			status: 404,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
+		});
+
+	} catch (error) {
+		log({
+			event: 'account_request_error',
+			request_id: requestId,
+			path,
+			method: request.method,
+			error: error instanceof Error ? error.message : String(error),
+		});
+
+		return new Response(JSON.stringify({
+			error: 'Internal server error',
+			request_id: requestId,
+		}), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
+		});
+	}
+}
+
+/**
+ * Handle dashboard API requests for API key management (Enhanced AQ-1)
+ * Endpoints:
+ * - POST /dashboard/api-keys - Create new API key (account-based)
+ * - GET /dashboard/api-keys - List account's API keys  
+ * - DELETE /dashboard/api-keys/:id - Revoke API key
+ * - GET /dashboard/account/:accountId - Get account info with quota
+ * - GET /dashboard/user/:userId - Get user info with quota (legacy compatibility)
+ */
+async function handleDashboardRequest(
+	request: Request,
+	url: URL,
+	requestId: string,
+	env?: Env
+): Promise<Response> {
+	const { createApiKey, listApiKeys, revokeApiKey, validateApiKey } = await import('./utils/apikey');
+	const { getAccount, getAccountQuotaLimit } = await import('./utils/account');
+
+	// CORS headers for dashboard requests
+	const corsHeaders = {
+		'Access-Control-Allow-Origin': '*', // In production, restrict this to your dashboard domain
+		'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+		'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-ID, X-Account-ID',
+	};
+
+	// Handle preflight requests
+	if (request.method === 'OPTIONS') {
+		return new Response(null, {
+			status: 204,
+			headers: corsHeaders,
+		});
+	}
+
+	const path = url.pathname;
+
+	try {
+		// POST /dashboard/api-keys - Create new API key (Enhanced AQ-1: Account-based)
 		if (path === '/dashboard/api-keys' && request.method === 'POST') {
 			const body = await request.json() as {
-				userId: string;
+				accountId?: string; // New account-based approach
+				userId?: string;    // Legacy compatibility
 				name: string;
 				quotaLimit?: number;
 			};
 
-			if (!body.userId || !body.name) {
+			// Support both accountId (new) and userId (legacy)
+			const identifier = body.accountId || body.userId;
+			
+			if (!identifier || !body.name) {
 				return new Response(JSON.stringify({
-					error: 'Missing required fields: userId, name',
+					error: 'Missing required fields: accountId (or userId), name',
 					request_id: requestId,
 				}), {
 					status: 400,
@@ -554,11 +843,19 @@ async function handleDashboardRequest(
 				});
 			}
 
-			// AQ-2: Free tier default is 1000 images/month
-			const quotaLimit = body.quotaLimit || 1000;
+			// For account-based approach, determine quota limit from account tier
+			let quotaLimit = body.quotaLimit || 1000; // Default fallback
+			
+			// If we have an accountId, check if it's a real account and get tier-based quota
+			if (body.accountId) {
+				const account = await getAccount(body.accountId, env);
+				if (account) {
+					quotaLimit = getAccountQuotaLimit(account.subscriptionTier);
+				}
+			}
 
 			const apiKeyWithSecret = await createApiKey(
-				body.userId,
+				identifier, // This is accountId or userId
 				body.name,
 				quotaLimit,
 				env
@@ -567,7 +864,8 @@ async function handleDashboardRequest(
 			log({
 				event: 'dashboard_api_key_created',
 				request_id: requestId,
-				user_id: body.userId,
+				account_id: body.accountId,
+				user_id: body.userId, // Legacy compatibility
 				key_id: apiKeyWithSecret.id,
 				quota_limit: quotaLimit,
 			});
@@ -582,13 +880,15 @@ async function handleDashboardRequest(
 			});
 		}
 
-		// GET /dashboard/api-keys?userId=... - List API keys for user
+		// GET /dashboard/api-keys?accountId=... or ?userId=... - List API keys
 		if (path === '/dashboard/api-keys' && request.method === 'GET') {
-			const userId = url.searchParams.get('userId');
+			const accountId = url.searchParams.get('accountId');
+			const userId = url.searchParams.get('userId'); // Legacy compatibility
+			const identifier = accountId || userId;
 			
-			if (!userId) {
+			if (!identifier) {
 				return new Response(JSON.stringify({
-					error: 'Missing userId parameter',
+					error: 'Missing accountId or userId parameter',
 					request_id: requestId,
 				}), {
 					status: 400,
@@ -596,7 +896,7 @@ async function handleDashboardRequest(
 				});
 			}
 
-			const apiKeys = await listApiKeys(userId, env);
+			const apiKeys = await listApiKeys(identifier, env);
 
 			return new Response(JSON.stringify({
 				success: true,
@@ -653,7 +953,51 @@ async function handleDashboardRequest(
 			}
 		}
 
-		// GET /dashboard/user/:userId - Get user info with current quota usage
+		// GET /dashboard/account/:accountId - Get account info with current quota usage (Enhanced AQ-1)
+		const accountMatch = path.match(/^\/dashboard\/account\/([^/]+)$/);
+		if (accountMatch && request.method === 'GET') {
+			const accountId = accountMatch[1];
+			
+			// Get account information
+			const account = await getAccount(accountId, env);
+			if (!account) {
+				return new Response(JSON.stringify({
+					error: 'Account not found',
+					request_id: requestId,
+				}), {
+					status: 404,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+
+			// Get API keys for this account
+			const apiKeys = await listApiKeys(accountId, env);
+			const quotaLimit = getAccountQuotaLimit(account.subscriptionTier);
+
+			return new Response(JSON.stringify({
+				success: true,
+				data: {
+					accountId: account.id,
+					email: account.email,
+					emailVerified: account.emailVerified,
+					subscriptionTier: account.subscriptionTier,
+					activeKeys: apiKeys.length,
+					totalQuotaUsed: account.totalQuotaUsed,
+					totalQuotaLimit: quotaLimit,
+					quotaPercentage: quotaLimit > 0 ? Math.round((account.totalQuotaUsed / quotaLimit) * 100) : 0,
+					quotaResetDate: account.quotaResetDate,
+					createdAt: account.createdAt,
+					lastActiveAt: account.lastActiveAt,
+					keys: apiKeys,
+				},
+				request_id: requestId,
+			}), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
+			});
+		}
+
+		// GET /dashboard/user/:userId - Get user info with current quota usage (Legacy compatibility)
 		const userMatch = path.match(/^\/dashboard\/user\/([^/]+)$/);
 		if (userMatch && request.method === 'GET') {
 			const userId = userMatch[1];

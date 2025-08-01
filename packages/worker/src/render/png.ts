@@ -68,8 +68,21 @@ async function ensureWasmInitialized() {
  */
 export async function svgToPng(svgString: string): Promise<ArrayBuffer> {
   try {
+    // Check if we're in a local development environment
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const globalAny = globalThis as any;
+    if (typeof globalAny.process !== 'undefined' || 
+        (typeof globalAny.navigator !== 'undefined' && globalAny.navigator?.userAgent?.includes('wrangler'))) {
+      throw new Error('PNG conversion is not available in local development due to WASM restrictions. Use format=svg for testing, or deploy to Cloudflare Workers for full PNG functionality.');
+    }
+
     // Ensure WASM is initialized before using Resvg
     await ensureWasmInitialized();
+    
+    // Check if WASM is properly initialized
+    if (!globalAny.Resvg) {
+      throw new Error('WASM is not available in this environment. PNG conversion requires deployment to Cloudflare Workers production environment.');
+    }
     
     const resvg = new Resvg(svgString, {
       background: 'white', // Fallback background for transparency

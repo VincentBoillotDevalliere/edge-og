@@ -13,10 +13,10 @@ GET /                    # Enhanced homepage with:
                         # - API documentation  
                         # - Template showcase
                         # - Quick testing interface
-
 GET /dashboard/keys     # Simple API key creation (returns JSON)
 POST /dashboard/keys    # Create new API key
 GET /dashboard/usage    # Usage stats (JSON)
+
 GET /og                 # Image generation (core feature)
 GET /health            # Health check
 ```
