@@ -38,19 +38,22 @@ describe('Edge-OG Worker', () => {
 	});
 
 	describe('Health check', () => {
-		it('serves homepage HTML at root', async () => {
+		it('serves API info JSON at root', async () => {
 			const request = new IncomingRequest('https://example.com/');
 			const ctx = createExecutionContext();
 			const response = await worker.fetch(request, env, ctx);
 			await waitOnExecutionContext(ctx);
 			
 			expect(response.status).toBe(200);
-			expect(response.headers.get('Content-Type')).toBe('text/html; charset=utf-8');
+			expect(response.headers.get('Content-Type')).toBe('application/json');
 			
-			const html = await response.text();
-			expect(html).toContain('Edge-OG');
-			expect(html).toContain('Open Graph Image Generator');
-			expect(html).toContain('/og?template=');
+			const data = await response.json() as any;
+			expect(data.service).toBe('Edge-OG API');
+			expect(data.version).toBe('1.0.0');
+			expect(data.endpoints).toHaveProperty('generate');
+			expect(data.endpoints).toHaveProperty('health');
+			expect(data.endpoints).toHaveProperty('dashboard');
+			expect(data.features).toContain('11 professional templates');
 		});
 
 		it('provides health check endpoint', async () => {
@@ -753,4 +756,177 @@ describe('Edge-OG Worker', () => {
 		});
 
 	});
+
+	describe('AQ-1: Dashboard API Endpoints', () => {
+		describe('POST /dashboard/api-keys', () => {
+			it('creates new API key successfully', async () => {
+				const requestBody = {
+					userId: 'test-user-123',
+					name: 'Test API Key',
+					quotaLimit: 2000
+				};
+
+				const request = new IncomingRequest('https://example.com/dashboard/api-keys', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(requestBody)
+				});
+
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+
+				expect(response.status).toBe(201);
+				expect(response.headers.get('Content-Type')).toBe('application/json');
+
+				const data = await response.json() as any;
+				expect(data.success).toBe(true);
+				expect(data.data.userId).toBe('test-user-123');
+				expect(data.data.name).toBe('Test API Key');
+				expect(data.data.quotaLimit).toBe(2000);
+				expect(data.data.key).toMatch(/^edgeog_[a-z0-9]{32}$/);
+				expect(data.data.id).toBeDefined();
+				expect(data.data.active).toBe(true);
+				expect(data.data.quotaUsed).toBe(0);
+			});
+
+			it('validates required fields', async () => {
+				const requestBody = {
+					userId: 'test-user-123'
+					// Missing name field
+				};
+
+				const request = new IncomingRequest('https://example.com/dashboard/api-keys', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(requestBody)
+				});
+
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+
+				expect(response.status).toBe(400);
+				const data = await response.json() as any;
+				expect(data.error).toContain('Missing required fields');
+			});
+
+			it('applies free tier default quota', async () => {
+				const requestBody = {
+					userId: 'test-user-456',
+					name: 'Free Tier Key'
+					// No quotaLimit specified
+				};
+
+				const request = new IncomingRequest('https://example.com/dashboard/api-keys', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(requestBody)
+				});
+
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+
+				expect(response.status).toBe(201);
+				const data = await response.json() as any;
+				expect(data.data.quotaLimit).toBe(1000); // AQ-2: Free tier default
+			});
+		});
+
+		describe('GET /dashboard/api-keys', () => {
+			it('lists API keys for user', async () => {
+				// First create an API key
+				const createRequest = new IncomingRequest('https://example.com/dashboard/api-keys', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						userId: 'test-user-list',
+						name: 'List Test Key'
+					})
+				});
+
+				const createCtx = createExecutionContext();
+				await worker.fetch(createRequest, env, createCtx);
+				await waitOnExecutionContext(createCtx);
+
+				// Then list keys
+				const listRequest = new IncomingRequest('https://example.com/dashboard/api-keys?userId=test-user-list');
+				const listCtx = createExecutionContext();
+				const response = await worker.fetch(listRequest, env, listCtx);
+				await waitOnExecutionContext(listCtx);
+
+				expect(response.status).toBe(200);
+				const data = await response.json() as any;
+				expect(data.success).toBe(true);
+				expect(data.data).toBeInstanceOf(Array);
+				expect(data.data.length).toBeGreaterThan(0);
+				expect(data.data[0].name).toBe('List Test Key');
+				expect(data.data[0]).not.toHaveProperty('keyHash'); // Security: no hash in response
+			});
+
+			it('requires userId parameter', async () => {
+				const request = new IncomingRequest('https://example.com/dashboard/api-keys');
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+
+				expect(response.status).toBe(400);
+				const data = await response.json() as any;
+				expect(data.error).toContain('Missing userId parameter');
+			});
+		});
+
+		describe('GET /dashboard/user/:userId', () => {
+			it('returns user quota information', async () => {
+				// Create API key first
+				const createRequest = new IncomingRequest('https://example.com/dashboard/api-keys', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						userId: 'quota-test-user',
+						name: 'Quota Test Key',
+						quotaLimit: 500
+					})
+				});
+
+				const createCtx = createExecutionContext();
+				await worker.fetch(createRequest, env, createCtx);
+				await waitOnExecutionContext(createCtx);
+
+				// Get user info
+				const userRequest = new IncomingRequest('https://example.com/dashboard/user/quota-test-user');
+				const userCtx = createExecutionContext();
+				const response = await worker.fetch(userRequest, env, userCtx);
+				await waitOnExecutionContext(userCtx);
+
+				expect(response.status).toBe(200);
+				const data = await response.json() as any;
+				expect(data.success).toBe(true);
+				expect(data.data.userId).toBe('quota-test-user');
+				expect(data.data.activeKeys).toBe(1);
+				expect(data.data.totalQuotaLimit).toBe(500);
+				expect(data.data.totalQuotaUsed).toBe(0);
+				expect(data.data.quotaPercentage).toBe(0);
+			});
+		});
+
+		describe('CORS handling', () => {
+			it('handles preflight requests', async () => {
+				const request = new IncomingRequest('https://example.com/dashboard/api-keys', {
+					method: 'OPTIONS'
+				});
+
+				const ctx = createExecutionContext();
+				const response = await worker.fetch(request, env, ctx);
+				await waitOnExecutionContext(ctx);
+
+				expect(response.status).toBe(204);
+				expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
+				expect(response.headers.get('Access-Control-Allow-Methods')).toContain('POST');
+				expect(response.headers.get('Access-Control-Allow-Headers')).toContain('Content-Type');
+			});
+		});
+	});
+
 });

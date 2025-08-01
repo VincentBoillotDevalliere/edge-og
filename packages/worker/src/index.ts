@@ -12,7 +12,6 @@ import { renderOpenGraphImage } from './render';
 import { WorkerError } from './utils/error';
 import { log, logRequest } from './utils/logger';
 import { TemplateType } from './templates';
-import { getHomePage } from './utils/homepage';
 import { 
 	getCacheStatus, 
 	generateETag, 
@@ -27,6 +26,7 @@ import {
 	getVersionedCacheHeaders,
 	createCacheInvalidationMetrics
 } from './utils/cache';
+import { getHomePage } from './utils/homepage';
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -42,7 +42,12 @@ export default {
 				return Response.redirect(httpsUrl.toString(), 301);
 			}
 
-			// Only handle GET requests
+			// AQ-1: Dashboard API endpoints for API key management (allow POST/DELETE)
+			if (url.pathname.startsWith('/dashboard')) {
+				return await handleDashboardRequest(request, url, requestId, env);
+			}
+
+			// Only handle GET requests for non-dashboard routes
 			if (request.method !== 'GET') {
 				throw new WorkerError('Method not allowed', 405, requestId);
 			}
@@ -60,12 +65,10 @@ export default {
 				return response;
 			}
 
-			// Default route - serve homepage
+			// Homepage with interactive API builder
 			if (url.pathname === '/') {
 				const baseUrl = `${url.protocol}//${url.host}`;
-				const homepage = getHomePage(baseUrl);
-				
-				return new Response(homepage, {
+				return new Response(getHomePage(baseUrl), {
 					headers: {
 						'Content-Type': 'text/html; charset=utf-8',
 						'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
@@ -127,6 +130,7 @@ export default {
  * Implements CG-1: Generate PNG 1200×630 images <150ms
  * Implements EC-1: Cache optimization with hit ratio monitoring
  * Implements EC-2: Cache invalidation when hash changes
+ * Implements AQ-1: API key authentication and quota management
  */
 async function handleOGImageGeneration(
 	url: URL,
@@ -136,6 +140,62 @@ async function handleOGImageGeneration(
 	env?: Env
 ): Promise<Response> {
 	const startRender = performance.now();
+
+	// AQ-1: API Key Authentication
+	const { validateApiKey, incrementQuotaUsage, hasExceededQuota } = await import('./utils/apikey');
+	
+	// Extract API key from Authorization header or query parameter
+	const authHeader = request.headers.get('Authorization');
+	const apiKeyParam = url.searchParams.get('api_key');
+	
+	let apiKey: string | null = null;
+	if (authHeader && authHeader.startsWith('Bearer ')) {
+		apiKey = authHeader.substring(7);
+	} else if (apiKeyParam) {
+		apiKey = apiKeyParam;
+	}
+
+	// For now, allow requests without API key for free tier testing
+	// In production, you might want to enforce API key requirement
+	let apiKeyData = null;
+	if (apiKey) {
+		apiKeyData = await validateApiKey(apiKey, env);
+		
+		if (!apiKeyData) {
+			throw new WorkerError('Invalid API key', 401, requestId);
+		}
+
+		// AQ-2: Check quota limits (soft blocking)
+		const quotaExceeded = await hasExceededQuota(apiKeyData.id, env);
+		if (quotaExceeded) {
+			log({
+				event: 'quota_exceeded',
+				request_id: requestId,
+				user_id: apiKeyData.userId,
+				key_id: apiKeyData.id,
+				quota_used: apiKeyData.quotaUsed,
+				quota_limit: apiKeyData.quotaLimit,
+			});
+
+			// AQ-2: HTTP 429 after quota exceeded
+			return new Response(JSON.stringify({
+				error: 'Quota exceeded',
+				message: `You have exceeded your quota of ${apiKeyData.quotaLimit} images per month. Current usage: ${apiKeyData.quotaUsed}`,
+				quota_limit: apiKeyData.quotaLimit,
+				quota_used: apiKeyData.quotaUsed,
+				quota_reset_at: apiKeyData.quotaResetAt,
+				request_id: requestId,
+			}), {
+				status: 429,
+				headers: {
+					'Content-Type': 'application/json',
+					'X-RateLimit-Limit': apiKeyData.quotaLimit.toString(),
+					'X-RateLimit-Remaining': Math.max(0, apiKeyData.quotaLimit - apiKeyData.quotaUsed).toString(),
+					'X-RateLimit-Reset-At': apiKeyData.quotaResetAt,
+				},
+			});
+		}
+	}
 
 	// EC-1: Get cache status for monitoring
 	const cacheStatus = getCacheStatus(request);
@@ -251,6 +311,35 @@ async function handleOGImageGeneration(
 	if (fallbackOccurred) {
 		headers['X-Fallback-To-SVG'] = 'true';
 		headers['X-Fallback-Reason'] = 'PNG conversion not available in development environment';
+	}
+
+	// AQ-1: Increment quota usage after successful image generation
+	if (apiKeyData) {
+		// Use execution context to increment quota asynchronously (don't block response)
+		ctx.waitUntil(
+			incrementQuotaUsage(apiKeyData.id, 1, env).then(success => {
+				if (success) {
+					log({
+						event: 'quota_incremented',
+						request_id: requestId,
+						user_id: apiKeyData.userId,
+						key_id: apiKeyData.id,
+						quota_used: apiKeyData.quotaUsed + 1,
+					});
+				} else {
+					log({
+						event: 'quota_increment_failed',
+						request_id: requestId,
+						key_id: apiKeyData.id,
+					});
+				}
+			})
+		);
+
+		// Add quota headers to response
+		headers['X-RateLimit-Limit'] = apiKeyData.quotaLimit.toString();
+		headers['X-RateLimit-Remaining'] = Math.max(0, apiKeyData.quotaLimit - apiKeyData.quotaUsed - 1).toString();
+		headers['X-RateLimit-Reset-At'] = apiKeyData.quotaResetAt;
 	}
 
 	// Return with EC-1 compliant caching headers and EC-2 invalidation support
@@ -395,4 +484,221 @@ function validateOGParams(searchParams: URLSearchParams): {
 		instructor: instructor || undefined,
 		level: level || undefined,
 	};
+}
+
+/**
+ * Handle dashboard API requests for API key management (AQ-1)
+ * Endpoints:
+ * - POST /dashboard/api-keys - Create new API key
+ * - GET /dashboard/api-keys - List user's API keys  
+ * - DELETE /dashboard/api-keys/:id - Revoke API key
+ * - GET /dashboard/user/:userId - Get user info with quota
+ */
+async function handleDashboardRequest(
+	request: Request,
+	url: URL,
+	requestId: string,
+	env?: Env
+): Promise<Response> {
+	const { createApiKey, listApiKeys, revokeApiKey, validateApiKey } = await import('./utils/apikey');
+
+	// CORS headers for dashboard requests
+	const corsHeaders = {
+		'Access-Control-Allow-Origin': '*', // In production, restrict this to your dashboard domain
+		'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+		'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-ID',
+	};
+
+	// Handle preflight requests
+	if (request.method === 'OPTIONS') {
+		return new Response(null, {
+			status: 204,
+			headers: corsHeaders,
+		});
+	}
+
+	const path = url.pathname;
+
+	try {
+		// POST /dashboard/api-keys - Create new API key (AQ-1: Main endpoint)
+		if (path === '/dashboard/api-keys' && request.method === 'POST') {
+			const body = await request.json() as {
+				userId: string;
+				name: string;
+				quotaLimit?: number;
+			};
+
+			if (!body.userId || !body.name) {
+				return new Response(JSON.stringify({
+					error: 'Missing required fields: userId, name',
+					request_id: requestId,
+				}), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+
+			// Validate name length
+			if (body.name.length > 50) {
+				return new Response(JSON.stringify({
+					error: 'API key name too long (max 50 characters)',
+					request_id: requestId,
+				}), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+
+			// AQ-2: Free tier default is 1000 images/month
+			const quotaLimit = body.quotaLimit || 1000;
+
+			const apiKeyWithSecret = await createApiKey(
+				body.userId,
+				body.name,
+				quotaLimit,
+				env
+			);
+
+			log({
+				event: 'dashboard_api_key_created',
+				request_id: requestId,
+				user_id: body.userId,
+				key_id: apiKeyWithSecret.id,
+				quota_limit: quotaLimit,
+			});
+
+			return new Response(JSON.stringify({
+				success: true,
+				data: apiKeyWithSecret,
+				request_id: requestId,
+			}), {
+				status: 201,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
+			});
+		}
+
+		// GET /dashboard/api-keys?userId=... - List API keys for user
+		if (path === '/dashboard/api-keys' && request.method === 'GET') {
+			const userId = url.searchParams.get('userId');
+			
+			if (!userId) {
+				return new Response(JSON.stringify({
+					error: 'Missing userId parameter',
+					request_id: requestId,
+				}), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+
+			const apiKeys = await listApiKeys(userId, env);
+
+			return new Response(JSON.stringify({
+				success: true,
+				data: apiKeys,
+				request_id: requestId,
+			}), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
+			});
+		}
+
+		// DELETE /dashboard/api-keys/:keyId - Revoke API key
+		const revokeMatch = path.match(/^\/dashboard\/api-keys\/([^/]+)$/);
+		if (revokeMatch && request.method === 'DELETE') {
+			const keyId = revokeMatch[1];
+			const userId = request.headers.get('X-User-ID');
+
+			if (!userId) {
+				return new Response(JSON.stringify({
+					error: 'Missing X-User-ID header',
+					request_id: requestId,
+				}), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+
+			const success = await revokeApiKey(keyId, userId, env);
+
+			if (success) {
+				log({
+					event: 'dashboard_api_key_revoked',
+					request_id: requestId,
+					user_id: userId,
+					key_id: keyId,
+				});
+
+				return new Response(JSON.stringify({
+					success: true,
+					message: 'API key revoked successfully',
+					request_id: requestId,
+				}), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			} else {
+				return new Response(JSON.stringify({
+					error: 'Failed to revoke API key or key not found',
+					request_id: requestId,
+				}), {
+					status: 404,
+					headers: { 'Content-Type': 'application/json', ...corsHeaders },
+				});
+			}
+		}
+
+		// GET /dashboard/user/:userId - Get user info with current quota usage
+		const userMatch = path.match(/^\/dashboard\/user\/([^/]+)$/);
+		if (userMatch && request.method === 'GET') {
+			const userId = userMatch[1];
+			const apiKeys = await listApiKeys(userId, env);
+
+			// Calculate total quota usage across all active keys
+			const totalQuotaUsed = apiKeys.reduce((sum, key) => sum + key.quotaUsed, 0);
+			const totalQuotaLimit = apiKeys.reduce((sum, key) => sum + key.quotaLimit, 0);
+
+			return new Response(JSON.stringify({
+				success: true,
+				data: {
+					userId,
+					activeKeys: apiKeys.length,
+					totalQuotaUsed,
+					totalQuotaLimit,
+					quotaPercentage: totalQuotaLimit > 0 ? Math.round((totalQuotaUsed / totalQuotaLimit) * 100) : 0,
+					keys: apiKeys,
+				},
+				request_id: requestId,
+			}), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json', ...corsHeaders },
+			});
+		}
+
+		// 404 for unmatched dashboard routes
+		return new Response(JSON.stringify({
+			error: 'Dashboard endpoint not found',
+			request_id: requestId,
+		}), {
+			status: 404,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
+		});
+
+	} catch (error) {
+		log({
+			event: 'dashboard_request_error',
+			request_id: requestId,
+			path,
+			method: request.method,
+			error: error instanceof Error ? error.message : String(error),
+		});
+
+		return new Response(JSON.stringify({
+			error: 'Internal server error',
+			request_id: requestId,
+		}), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json', ...corsHeaders },
+		});
+	}
 }
