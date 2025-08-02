@@ -225,19 +225,22 @@ async function handleOGImageGeneration(
 			resetAt: apiKeyData.quotaResetAt
 		};
 
-		// If we have an accountId, use account-based quota checking
+		// If we have an accountId, check if there's an actual account record
 		if (apiKeyData.accountId) {
 			const { hasAccountExceededQuota, getAccount, getAccountQuotaLimit } = await import('./utils/account');
-			quotaExceeded = await hasAccountExceededQuota(apiKeyData.accountId, env);
-			
-			// Get account info for more accurate quota reporting
 			const account = await getAccount(apiKeyData.accountId, env);
+			
 			if (account) {
+				// Use account-based quota checking
+				quotaExceeded = await hasAccountExceededQuota(apiKeyData.accountId, env);
 				quotaInfo = {
 					limit: getAccountQuotaLimit(account.subscriptionTier),
 					used: account.totalQuotaUsed,
 					resetAt: account.quotaResetDate
 				};
+			} else {
+				// Fall back to legacy per-key quota checking
+				quotaExceeded = await hasExceededQuota(apiKeyData.id, env);
 			}
 		} else {
 			// Fall back to legacy per-key quota checking

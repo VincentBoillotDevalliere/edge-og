@@ -845,7 +845,7 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             createBtn.disabled = true;
             
             try {
-                const response = await fetch('${baseUrl}/api/keys', {
+                const response = await fetch('${baseUrl}/dashboard/api-keys', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -896,17 +896,17 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             listDiv.innerHTML = '⏳ Loading your API keys...';
             
             try {
-                const response = await fetch('${baseUrl}/api/keys?userId=' + encodeURIComponent(userId));
+                const response = await fetch('${baseUrl}/dashboard/api-keys?userId=' + encodeURIComponent(userId));
                 const data = await response.json();
                 
-                if (response.ok && data.keys) {
-                    if (data.keys.length === 0) {
+                if (response.ok && data.data) {
+                    if (data.data.length === 0) {
                         listDiv.innerHTML = '<p style="color: #666; text-align: center; padding: 2rem;">No API keys found for this user.</p>';
                         return;
                     }
                     
                     let keysHtml = '<div style="margin-top: 1rem;">';
-                    data.keys.forEach(key => {
+                    data.data.forEach(key => {
                         const usagePercent = key.quotaLimit > 0 ? (key.quotaUsed / key.quotaLimit * 100).toFixed(1) : 0;
                         const statusColor = key.active ? '#22c55e' : '#ef4444';
                         const usageColor = usagePercent > 80 ? '#ef4444' : usagePercent > 60 ? '#f59e0b' : '#22c55e';
@@ -951,8 +951,11 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             }
             
             try {
-                const response = await fetch('${baseUrl}/api/keys/' + keyId + '?userId=' + encodeURIComponent(userId), {
-                    method: 'DELETE'
+                const response = await fetch('${baseUrl}/dashboard/api-keys/' + keyId, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-User-ID': userId
+                    }
                 });
                 
                 const data = await response.json();
@@ -1240,13 +1243,14 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             }
             
             try {
-                const response = await fetch('/accounts/' + accountId + '/keys', {
+                const response = await fetch('/dashboard/api-keys', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        name: keyName
+                        name: keyName,
+                        userId: accountId  // Use accountId as userId for compatibility
                     })
                 });
                 
@@ -1280,8 +1284,11 @@ ${baseUrl}/og?template=tech&title=Release&api_key=edgeog_...</div>
             }
             
             try {
-                const response = await fetch('/accounts/' + accountId + '/keys/' + keyId, {
-                    method: 'DELETE'
+                const response = await fetch('/dashboard/api-keys/' + keyId, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-User-ID': accountId
+                    }
                 });
                 
                 if (response.ok) {

@@ -3,7 +3,7 @@
 # Test script for Edge-OG API Key Management (AQ-1)
 # Usage: ./test-api.sh
 
-BASE_URL="http://localhost:64539"
+BASE_URL="http://localhost:8787"
 USER_ID="test-user-$(date +%s)"
 
 echo "🚀 Testing Edge-OG API Key Management"
