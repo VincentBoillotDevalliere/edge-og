@@ -27,11 +27,8 @@
 	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
-	"vars": { 
-		"JWT_SECRET": "a381875f7d844a88ccbeef30b4f5f7aa2c4bfc11e1a16e7025f672639edc9d4e",
-		"EMAIL_PEPPER": "5f4dcc3b5aa765d61d8327deb882cf99",
-		"RESEND_API_KEY": "re_5rBMpDTz_2w1iJx6jkhrit76qdxZhg21f"
-	},
+	// "vars": { "MY_VARIABLE": "production_value" },
+	// ⚠️  SECURITY: Move secrets to `wrangler secret put` for production
 	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
@@ -44,18 +41,18 @@
 	"kv_namespaces": [
 		{
 			"binding": "TEMPLATES",
-			"id": "prod_templates_id",
-			"preview_id": "dev_templates_id"
+			"id": "ddbd3f297316429ba3d32ab9909c3af9",
+			"preview_id": "d62ebc2e836b4b64be0d125c276edbf9"
 		},
 		{
 			"binding": "USAGE", 
-			"id": "prod_usage_id",
-			"preview_id": "dev_usage_id"
+			"id": "cdd7971a04fb43758334787a84c53c57",
+			"preview_id": "20727b212e4b49d19996c7bf8d8211cb"
 		},
 		{
 			"binding": "ACCOUNTS",
-			"id": "prod_accounts_id", 
-			"preview_id": "dev_accounts_id"
+			"id": "d6168795d26549059728348057ab6d90", 
+			"preview_id": "d6168795d26549059728348057ab6d90"
 		}
 	],
 

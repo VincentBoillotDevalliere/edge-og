@@ -1,4 +1,7 @@
-[[kv_namespaces]]
+[[kv_names[[kv_namespaces]]
+binding = "ACCOUNTS"
+id       = "⚙️ accounts_id"
+preview_id = "⚙️ accounts_preview_id"
 binding = "TEMPLATES"
 id       = "⚙️ prod_id"
 preview_id = "⚙️ dev_id"

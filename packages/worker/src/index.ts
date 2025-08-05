@@ -40,6 +40,9 @@ import {
 	validateAuthEnvironment
 } from './utils/auth';
 
+// Constants for rate limiting and security
+const RATE_LIMIT_RETRY_AFTER_SECONDS = 300; // 5 minutes
+
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const startTime = Date.now();
@@ -465,14 +468,14 @@ async function handleMagicLinkRequest(
 			return new Response(
 				JSON.stringify({
 					error: 'Too many requests. Please wait 5 minutes before trying again.',
-					retry_after: 300, // 5 minutes in seconds
+					retry_after: RATE_LIMIT_RETRY_AFTER_SECONDS,
 					request_id: requestId,
 				}),
 				{
 					status: 429,
 					headers: {
 						'Content-Type': 'application/json',
-						'Retry-After': '300',
+						'Retry-After': String(RATE_LIMIT_RETRY_AFTER_SECONDS),
 					},
 				}
 			);
