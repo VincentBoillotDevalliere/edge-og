@@ -27,7 +27,9 @@
 	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
-	// "vars": { "MY_VARIABLE": "production_value" },
+	"vars": { 
+		"BASE_URL": "https://edge-og-worker.edge-og.workers.dev"
+	},
 	// ⚠️  SECURITY: Move secrets to `wrangler secret put` for production
 	/**
 	 * Note: Use secrets to store sensitive data.
