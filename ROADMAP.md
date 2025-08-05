@@ -32,14 +32,73 @@
 | EC‑2 | Je peux invalider le cache quand le hash change | Nouveau hash ⇒ cache‑miss, guide d’usage fourni | Should |
 | EC‑3 | Les requêtes sont servies depuis le PoP le plus proche | TTFB < 200 ms mesuré sur 3 régions | Could |
 
-### 3. Authentication & Quotas
+
+### 3. Authentication & Quotas  
+---
+#### 3‑A. Comptes & Magic‑link
 
 | ID | User Story | Critères d’acceptation | Priorité |
 |----|-----------|------------------------|----------|
-| **AQ‑1** | L’utilisateur obtient une clé API unique après signup | Endpoint `/dashboard/api‑keys` ; clé stockée chiffrée | **Must** |
-| AQ‑2 | Free tier : 1 000 images/mois, blocage soft au‑delà | Compteur KV + HTTP 429 après dépassement | **Must** |
-| AQ‑3 | Admin peut réinitialiser un quota manuellement | Commande CLI documentée | Should |
+| **AQ‑1.1** | En tant que visiteur, je crée un compte via magic‑link e‑mail | • POST `/auth/request-link` avec `email`.<br>• Mail envoyé (MailChannels).<br>• Objet KV `account:{UUID}` créé. | **Must** |
+| **AQ‑1.2** | En tant qu’utilisateur, je suis authentifié après clic sur le lien | • GET `/auth/callback?token=` pose cookie `edge_og_session` (JWT 24 h).<br>• Redirection `/dashboard`. | **Must** |
+| **AQ‑1.3** | En tant qu’utilisateur, je me déconnecte | • DELETE `/auth/session` supprime cookie. | **Should** |
 
+> **Schéma KV — `ACCOUNTS`**  
+> `account:{UUID}` → `{ email_hash, created, plan }` (hash SHA‑256 + pepper).
+
+---
+
+#### 3‑B. Clés API
+
+| ID | User Story | Critères d’acceptation | Priorité |
+|----|-----------|------------------------|----------|
+| **AQ‑2.1** | Je génère une clé API depuis `/dashboard/api-keys` | • POST renvoie `prefix + secret` (base62 64 car.).<br>• KV `key:{kid}` stocke HMAC‑SHA256 du secret. | **Must** |
+| **AQ‑2.2** | Je liste ou révoque mes clés | • GET montre nom, prefix, dates.<br>• DELETE met `revoked=true`. | **Must** |
+
+> **Schéma KV — `API_KEYS`**  
+> `key:{kid}` → `{ account, hash, name, revoked, created, last_used }`.
+
+---
+
+#### 3‑C. Authentification requête
+
+| ID | User Story | Critères d’acceptation | Priorité |
+|----|-----------|------------------------|----------|
+| **AQ‑2.3** | Le Worker valide le header `Authorization: Bearer` | • Lookup constant‑time du `kid` (prefix).<br>• Match HMAC ; sinon HTTP 401. | **Must** |
+
+---
+
+#### 3‑D. Comptage & Limites
+
+| ID | User Story | Critères d’acceptation | Priorité |
+|----|-----------|------------------------|----------|
+| **AQ‑3.1** | Free tier : 1 000 images/mois max | • Incrément atomique usage.<br>• Dès dépassement : HTTP 429 JSON. | **Must** |
+| **AQ‑3.2** | Le compteur repart à 0 chaque 1ᵉʳ du mois UTC | • Clé `usage:{kid}:{YYYYMM}` nouvel objet mensuel. | **Must** |
+| **AQ‑3.3** | Les plans payants obtiennent quotas supérieurs | • Limite lue dans `ACCOUNTS.plan` → table limites. | **Should** |
+| **AQ‑3.4** | L’admin réinitialise un quota | • Doc CLI : `wrangler kv:key put usage:{kid}:{YYYYMM} 0`. | **Could** |
+
+> **Concurrence** : incréments effectués dans un **Durable Object
+> `QuotaCounter`** (clé `kid‑YYYYMM`) puis flush vers `USAGE` KV toutes les 60 s.
+
+---
+
+#### 3‑E. Logs & Alertes
+
+| ID | User Story | Critères d’acceptation | Priorité |
+|----|-----------|------------------------|----------|
+| **AQ‑4.1** | Journalisation des refus quota/auth | • Log JSON `{event, kid, ip}`. | **Should** |
+| **AQ‑4.2** | Alerte Slack si > 20 auth fail / min | • Rule Grafana ; message détaillé. | **Could** |
+
+---
+
+#### 3‑F. Sécurité additionnelle
+
+| ID | User Story | Critères d’acceptation | Priorité |
+|----|-----------|------------------------|----------|
+| **AQ‑5.1** | Limiter spam magic‑link | • 5 req / IP / 5 min + Turnstile CAPTCHA. | **Should** |
+| **AQ‑5.2** | Entropie des clés API ≥ 256 bits | • Génération `crypto.getRandomValues` validée par test unitaire. | **Must** |
+
+---
 ### 4. Billing & Plans
 
 | ID | User Story | Critères d’acceptation | Priorité |

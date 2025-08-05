@@ -1,5 +1,18 @@
 [[kv_namespaces]]
 binding = "TEMPLATES"
+id       = "⚙️ prod_id"
+preview_id = "⚙️ dev_id"
+
+[[kv_namespaces]]
+binding = "USAGE"
+id       = "⚙️ usage_id"
+preview_id = "⚙️ usage_preview_id"
+
+[[kv_namespaces]]
+binding = "ACCOUNTS"
+id       = "⚙️ accounts_id"
+preview_id = "⚙️ accounts_preview_id"spaces]]
+binding = "TEMPLATES"
 id       = "⚙️ prod_id"
 preview_id = "⚙️ dev_id"
 

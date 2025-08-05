@@ -27,11 +27,37 @@
 	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
-	// "vars": { "MY_VARIABLE": "production_value" },
+	"vars": { 
+		"JWT_SECRET": "a381875f7d844a88ccbeef30b4f5f7aa2c4bfc11e1a16e7025f672639edc9d4e",
+		"EMAIL_PEPPER": "5f4dcc3b5aa765d61d8327deb882cf99",
+		"RESEND_API_KEY": "re_5rBMpDTz_2w1iJx6jkhrit76qdxZhg21f"
+	},
 	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
+
+	/**
+	 * KV Namespaces
+	 * https://developers.cloudflare.com/workers/wrangler/configuration/#kv-namespaces
+	 */
+	"kv_namespaces": [
+		{
+			"binding": "TEMPLATES",
+			"id": "prod_templates_id",
+			"preview_id": "dev_templates_id"
+		},
+		{
+			"binding": "USAGE", 
+			"id": "prod_usage_id",
+			"preview_id": "dev_usage_id"
+		},
+		{
+			"binding": "ACCOUNTS",
+			"id": "prod_accounts_id", 
+			"preview_id": "dev_accounts_id"
+		}
+	],
 
 	/**
 	 * Static Assets

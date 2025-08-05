@@ -3,6 +3,18 @@
 // Runtime types generated with workerd@1.20250712.0 2025-07-26 
 declare namespace Cloudflare {
 	interface Env {
+		TEMPLATES: KVNamespace;
+		USAGE: KVNamespace;
+		ACCOUNTS: KVNamespace;
+		SEND_EMAIL?: SendEmail;
+		// Authentication & Security
+		JWT_SECRET?: string;
+		EMAIL_PEPPER?: string;
+		// Resend configuration
+		RESEND_API_KEY?: string;
+		// Environment
+		ENVIRONMENT?: string;
+		BASE_URL?: string;
 	}
 }
 interface Env extends Cloudflare.Env {}
