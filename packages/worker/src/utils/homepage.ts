@@ -209,6 +209,41 @@ export function getHomePage(baseUrl: string): string {
     </div>
 
     <div class="container">
+        <!-- Magic-Link Signup Section -->
+        <div class="section">
+            <h2><span class="emoji">🔐</span> Create Account (Magic-Link)</h2>
+            <p>Test the AQ-1.1 magic-link account creation feature:</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start; margin-top: 1.5rem;">
+                <div>
+                    <div class="form-group">
+                        <label for="signup-email">Email Address</label>
+                        <input type="email" id="signup-email" placeholder="your.email@example.com" required>
+                    </div>
+                    <button class="btn" onclick="requestMagicLink()" style="width: 100%; margin-top: 1rem;">
+                        Send Magic Link ✨
+                    </button>
+                    <div id="signup-result" style="margin-top: 1rem; padding: 1rem; border-radius: 8px; display: none;"></div>
+                </div>
+                <div>
+                    <h4>What this does:</h4>
+                    <ul style="list-style-type: none; padding: 0; margin-top: 1rem;">
+                        <li style="margin: 0.5rem 0; padding: 0.5rem; background: rgba(255,255,255,0.1); border-radius: 6px;">
+                            <strong>1.</strong> Creates account with UUID in KV storage
+                        </li>
+                        <li style="margin: 0.5rem 0; padding: 0.5rem; background: rgba(255,255,255,0.1); border-radius: 6px;">
+                            <strong>2.</strong> Hashes email with SHA-256 + pepper
+                        </li>
+                        <li style="margin: 0.5rem 0; padding: 0.5rem; background: rgba(255,255,255,0.1); border-radius: 6px;">
+                            <strong>3.</strong> Sends magic-link via MailChannels
+                        </li>
+                        <li style="margin: 0.5rem 0; padding: 0.5rem; background: rgba(255,255,255,0.1); border-radius: 6px;">
+                            <strong>4.</strong> Rate limiting: 5 req/IP/5min
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
         <!-- Quick Test Section -->
         <div class="quick-test">
             <h2><span class="emoji">⚡</span> Quick Test</h2>
@@ -592,6 +627,56 @@ ${baseUrl}/og?template=event&title=Workshop&date=Next%20Friday&emoji=🎯
         function setEmoji(emoji) {
             document.getElementById('emoji').value = emoji;
             updatePreview();
+        }
+        
+        // Magic-link signup function
+        async function requestMagicLink() {
+            const email = document.getElementById('signup-email').value;
+            const resultDiv = document.getElementById('signup-result');
+            
+            // Basic email validation
+            if (!email || !email.includes('@')) {
+                resultDiv.style.display = 'block';
+                resultDiv.style.background = '#fee2e2';
+                resultDiv.style.color = '#dc2626';
+                resultDiv.innerHTML = '❌ Please enter a valid email address';
+                return;
+            }
+            
+            // Show loading state
+            resultDiv.style.display = 'block';
+            resultDiv.style.background = '#fef3c7';
+            resultDiv.style.color = '#d97706';
+            resultDiv.innerHTML = '⏳ Sending magic link...';
+            
+            try {
+                const response = await fetch('${baseUrl}/auth/request-link', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Success
+                    resultDiv.style.background = '#d1fae5';
+                    resultDiv.style.color = '#065f46';
+                    resultDiv.innerHTML = '✅ ' + data.message + '<br><small>Check your email for the magic link!</small>';
+                } else {
+                    // Error
+                    resultDiv.style.background = '#fee2e2';
+                    resultDiv.style.color = '#dc2626';
+                    resultDiv.innerHTML = '❌ ' + (data.error || 'Failed to send magic link');
+                }
+            } catch (error) {
+                // Network error
+                resultDiv.style.background = '#fee2e2';
+                resultDiv.style.color = '#dc2626';
+                resultDiv.innerHTML = '❌ Network error. Please try again.';
+            }
         }
         
         // Update preview when form changes

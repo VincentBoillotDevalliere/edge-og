@@ -27,6 +27,21 @@ import {
 	getVersionedCacheHeaders,
 	createCacheInvalidationMetrics
 } from './utils/cache';
+// AQ-1.1: Authentication imports
+import {
+	validateEmail,
+	hashEmailWithPepper,
+	generateSecureUUID,
+	createAccount,
+	findAccountByEmailHash,
+	generateMagicLinkToken,
+	sendMagicLinkEmail,
+	checkRateLimit,
+	validateAuthEnvironment
+} from './utils/auth';
+
+// Constants for rate limiting and security
+const RATE_LIMIT_RETRY_AFTER_SECONDS = 300; // 5 minutes
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -42,13 +57,34 @@ export default {
 				return Response.redirect(httpsUrl.toString(), 301);
 			}
 
-			// Only handle GET requests
-			if (request.method !== 'GET') {
-				throw new WorkerError('Method not allowed', 405, requestId);
+			// Route: POST /auth/request-link for magic-link account creation (AQ-1.1)
+			if (url.pathname === '/auth/request-link' && request.method === 'POST') {
+				const response = await handleMagicLinkRequest(request, requestId, env);
+				
+				// Log request
+				logRequest('magic_link_requested', startTime, response.status, requestId);
+				
+				return response;
 			}
 
-			// Route: /og endpoint for Open Graph image generation
+			// Route: /og endpoint for Open Graph image generation (GET only)
 			if (url.pathname === '/og') {
+				if (request.method !== 'GET') {
+					return new Response(
+						JSON.stringify({
+							error: 'Method not allowed. Only GET requests are supported.',
+							request_id: requestId,
+						}),
+						{
+							status: 405,
+							headers: {
+								'Content-Type': 'application/json',
+								'Allow': 'GET',
+							},
+						}
+					);
+				}
+
 				const response = await handleOGImageGeneration(url, requestId, ctx, request, env);
 				
 				// Log successful request
@@ -60,8 +96,8 @@ export default {
 				return response;
 			}
 
-			// Default route - serve homepage
-			if (url.pathname === '/') {
+			// Default route - serve homepage (GET only)
+			if (url.pathname === '/' && request.method === 'GET') {
 				const baseUrl = `${url.protocol}//${url.host}`;
 				const homepage = getHomePage(baseUrl);
 				
@@ -395,4 +431,165 @@ function validateOGParams(searchParams: URLSearchParams): {
 		instructor: instructor || undefined,
 		level: level || undefined,
 	};
+}
+
+/**
+ * Handle magic-link account creation request
+ * Implements AQ-1.1: En tant que visiteur, je crée un compte via magic-link e-mail
+ * 
+ * Acceptance criteria:
+ * • POST `/auth/request-link` avec `email`
+ * • Mail envoyé (MailChannels)  
+ * • Objet KV `account:{UUID}` créé
+ */
+async function handleMagicLinkRequest(
+	request: Request,
+	requestId: string,
+	env: Env
+): Promise<Response> {
+	try {
+		// Validate environment configuration
+		validateAuthEnvironment(env);
+
+		// Get client IP for rate limiting (AQ-5.1)
+		const clientIP = request.headers.get('CF-Connecting-IP') || 
+						request.headers.get('X-Forwarded-For') || 
+						'unknown';
+
+		// Check rate limiting: 5 req / IP / 5 min
+		const rateLimitPassed = await checkRateLimit(clientIP, env);
+		if (!rateLimitPassed) {
+			log({
+				event: 'magic_link_rate_limited',
+				client_ip: clientIP,
+				request_id: requestId,
+			});
+			
+			return new Response(
+				JSON.stringify({
+					error: 'Too many requests. Please wait 5 minutes before trying again.',
+					retry_after: RATE_LIMIT_RETRY_AFTER_SECONDS,
+					request_id: requestId,
+				}),
+				{
+					status: 429,
+					headers: {
+						'Content-Type': 'application/json',
+						'Retry-After': String(RATE_LIMIT_RETRY_AFTER_SECONDS),
+					},
+				}
+			);
+		}
+
+		// Parse request body
+		const contentType = request.headers.get('Content-Type') || '';
+		let email: string;
+
+		if (contentType.includes('application/json')) {
+			const body = await request.json() as { email?: string };
+			email = body.email || '';
+		} else if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+			const formData = await request.formData();
+			email = formData.get('email')?.toString() || '';
+		} else {
+			return new Response(
+				JSON.stringify({
+					error: 'Content-Type must be application/json or application/x-www-form-urlencoded',
+					request_id: requestId,
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Validate email format
+		if (!validateEmail(email)) {
+			log({
+				event: 'magic_link_invalid_email',
+				client_ip: clientIP,
+				request_id: requestId,
+			});
+
+			return new Response(
+				JSON.stringify({
+					error: 'Invalid email address format',
+					request_id: requestId,
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Hash email with pepper for privacy (as per ROADMAP KV schema)
+		const emailHash = await hashEmailWithPepper(email, env.EMAIL_PEPPER as string);
+
+		// Check if account already exists
+		const existingAccount = await findAccountByEmailHash(emailHash, env);
+		let accountId: string;
+
+		if (existingAccount) {
+			// Use existing account
+			accountId = existingAccount.accountId;
+			log({
+				event: 'magic_link_existing_account',
+				account_id: accountId,
+				request_id: requestId,
+			});
+		} else {
+			// Create new account
+			accountId = generateSecureUUID();
+			await createAccount(accountId, emailHash, env);
+			log({
+				event: 'magic_link_new_account',
+				account_id: accountId,
+				request_id: requestId,
+			});
+		}
+
+		// Generate magic link token (JWT, 15 min expiry)
+		const magicLinkToken = await generateMagicLinkToken(
+			accountId,
+			emailHash,
+			env.JWT_SECRET as string
+		);
+
+		// Send magic link email via MailChannels
+		await sendMagicLinkEmail(email, magicLinkToken, env);
+
+		// Return success response
+		return new Response(
+			JSON.stringify({
+				success: true,
+				message: 'Magic link sent successfully. Check your email to complete account setup.',
+				request_id: requestId,
+			}),
+			{
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
+
+	} catch (error) {
+		log({
+			event: 'magic_link_request_failed',
+			error: error instanceof Error ? error.message : 'Unknown error',
+			request_id: requestId,
+		});
+
+		// Don't expose internal errors to client
+		return new Response(
+			JSON.stringify({
+				error: 'Failed to process magic link request. Please try again.',
+				request_id: requestId,
+			}),
+			{
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
+	}
 }

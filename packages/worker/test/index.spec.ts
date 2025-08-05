@@ -1,5 +1,5 @@
 import { env, createExecutionContext, waitOnExecutionContext, SELF } from 'cloudflare:test';
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 
 // Mock render dependencies before any imports
 vi.hoisted(() => {
@@ -33,8 +33,27 @@ const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 
 describe('Edge-OG Worker', () => {
 	beforeAll(async () => {
+		// Mock fetch for MailChannels API calls
+		vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string, options?: any) => {
+			// Mock MailChannels API
+			if (url.includes('mailchannels.net')) {
+				return new Response(JSON.stringify({ message: 'Email sent successfully' }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' }
+				});
+			}
+			
+			// Default mock for other fetch calls
+			return new Response('Not Found', { status: 404 });
+		}));
+		
 		// Initialize WASM modules that might be needed
 		// This ensures @resvg/resvg-wasm is properly loaded
+	});
+
+	afterAll(() => {
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
 	});
 
 	describe('Health check', () => {
@@ -752,5 +771,280 @@ describe('Edge-OG Worker', () => {
 			expect(response.headers.get('Vary')).toBe('Accept-Encoding');
 		});
 
+	});
+
+	describe('AQ-1.1: Magic-link Account Creation', () => {
+		// Mock environment variables for testing
+		const testEnv = {
+			...env,
+			JWT_SECRET: 'test-jwt-secret-at-least-32-characters-long',
+			EMAIL_PEPPER: 'test-email-pepper-16chars',
+			MAILCHANNELS_API_TOKEN: 'test-mailchannels-token',
+			BASE_URL: 'https://test.edge-og.com',
+			// Add mock KV namespaces to avoid undefined errors
+			ACCOUNTS: {
+				get: vi.fn().mockImplementation(async (key) => {
+					// Mock different responses based on key
+					if (key.includes('existing@example.com')) {
+						return JSON.stringify({
+							email_hash: 'existing-hash',
+							created: new Date().toISOString(),
+							plan: 'free'
+						});
+					}
+					return null;
+				}),
+				put: vi.fn().mockResolvedValue(undefined),
+				list: vi.fn().mockResolvedValue({ keys: [] }),
+				delete: vi.fn().mockResolvedValue(undefined),
+				getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+			},
+			USAGE: {
+				get: vi.fn().mockResolvedValue(null),
+				put: vi.fn().mockResolvedValue(undefined),
+				delete: vi.fn().mockResolvedValue(undefined),
+				list: vi.fn().mockResolvedValue({ keys: [] }),
+				getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+			},
+		} as any;
+
+		// Mock sendMagicLinkEmail to avoid external API calls
+		vi.doMock('../src/utils/auth', async () => {
+			const actual = await vi.importActual('../src/utils/auth');
+			return {
+				...actual,
+				sendMagicLinkEmail: vi.fn().mockResolvedValue(undefined),
+			};
+		});
+
+		it('creates account with valid email (JSON body)', async () => {
+			const request = new IncomingRequest('https://example.com/auth/request-link', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'CF-Connecting-IP': '192.168.1.1',
+				},
+				body: JSON.stringify({
+					email: 'test@example.com'
+				}),
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('application/json');
+
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.message).toContain('Magic link sent successfully');
+			expect(data.request_id).toBeDefined();
+		});
+
+		it('creates account with valid email (form data)', async () => {
+			const formData = new FormData();
+			formData.append('email', 'test2@example.com');
+
+			const request = new IncomingRequest('https://example.com/auth/request-link', {
+				method: 'POST',
+				headers: {
+					'CF-Connecting-IP': '192.168.1.2',
+				},
+				body: formData,
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+		});
+
+		it('validates email format', async () => {
+			const request = new IncomingRequest('https://example.com/auth/request-link', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'CF-Connecting-IP': '192.168.1.3',
+				},
+				body: JSON.stringify({
+					email: 'invalid-email'
+				}),
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(400);
+			const data = await response.json() as any;
+			expect(data.error).toContain('Invalid email address format');
+			expect(data.request_id).toBeDefined();
+		});
+
+		it('requires email parameter', async () => {
+			const request = new IncomingRequest('https://example.com/auth/request-link', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'CF-Connecting-IP': '192.168.1.4',
+				},
+				body: JSON.stringify({}),
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(400);
+			const data = await response.json() as any;
+			expect(data.error).toContain('Invalid email address format');
+		});
+
+		it('validates Content-Type header', async () => {
+			const request = new IncomingRequest('https://example.com/auth/request-link', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'text/plain',
+					'CF-Connecting-IP': '192.168.1.5',
+				},
+				body: 'test@example.com',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(400);
+			const data = await response.json() as any;
+			expect(data.error).toContain('Content-Type must be application/json or application/x-www-form-urlencoded');
+		});
+
+		it('enforces rate limiting (AQ-5.1)', async () => {
+			const clientIP = '192.168.1.100';
+			const now = Date.now();
+			
+			// Mock rate limiting behavior - return 5 requests within the 5-minute window
+			const rateLimitTestEnv = {
+				...testEnv,
+				USAGE: {
+					get: vi.fn().mockImplementation(async (key, type) => {
+						if (key.includes('192.168.1.100')) {
+							const existingRequests = [
+								now - 60000,  // 1 minute ago
+								now - 120000, // 2 minutes ago
+								now - 180000, // 3 minutes ago
+								now - 240000, // 4 minutes ago
+								now - 290000  // 4.83 minutes ago (still within 5-minute window)
+							];
+							
+							// Return parsed object when type is 'json'
+							if (type === 'json') {
+								return {
+									requests: existingRequests,
+									count: existingRequests.length
+								};
+							} else {
+								return JSON.stringify({
+									requests: existingRequests,
+									count: existingRequests.length
+								});
+							}
+						}
+						return null;
+					}),
+					put: vi.fn().mockResolvedValue(undefined),
+					delete: vi.fn().mockResolvedValue(undefined),
+					list: vi.fn().mockResolvedValue({ keys: [] }),
+					getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+				},
+			} as any;
+			
+			// This request should be rate limited
+			const request = new IncomingRequest('https://example.com/auth/request-link', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'CF-Connecting-IP': clientIP,
+				},
+				body: JSON.stringify({
+					email: 'test6@example.com'
+				}),
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, rateLimitTestEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(429);
+			expect(response.headers.get('Retry-After')).toBe('300');
+			
+			const data = await response.json() as any;
+			expect(data.error).toContain('Too many requests');
+			expect(data.retry_after).toBe(300);
+		});
+
+		it('only accepts POST method', async () => {
+			const request = new IncomingRequest('https://example.com/auth/request-link', {
+				method: 'GET',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(404); // Falls through to 404 handler
+		});
+
+		it('handles missing environment variables', async () => {
+			const incompleteEnv = {
+				...env,
+				// Missing JWT_SECRET and EMAIL_PEPPER
+			};
+
+			const request = new IncomingRequest('https://example.com/auth/request-link', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'CF-Connecting-IP': '192.168.1.6',
+				},
+				body: JSON.stringify({
+					email: 'test@example.com'
+				}),
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, incompleteEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(500);
+			const data = await response.json() as any;
+			expect(data.error).toContain('Failed to process magic link request');
+			expect(data.request_id).toBeDefined();
+		});
+
+		it('handles existing account email hash lookup', async () => {
+			const email = 'existing@example.com';
+			
+			// First request should create account (will work due to mocking)
+			const request1 = new IncomingRequest('https://example.com/auth/request-link', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'CF-Connecting-IP': '192.168.1.7',
+				},
+				body: JSON.stringify({ email }),
+			});
+
+			const ctx1 = createExecutionContext();
+			const response1 = await worker.fetch(request1, testEnv, ctx1);
+			await waitOnExecutionContext(ctx1);
+			
+			// We expect this to work due to the mocked KV store
+			expect(response1.status).toBe(200);
+		});
 	});
 });
