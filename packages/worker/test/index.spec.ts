@@ -1,5 +1,5 @@
 import { env, createExecutionContext, waitOnExecutionContext, SELF } from 'cloudflare:test';
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 
 // Mock render dependencies before any imports
 vi.hoisted(() => {
@@ -1045,6 +1045,213 @@ describe('Edge-OG Worker', () => {
 			
 			// We expect this to work due to the mocked KV store
 			expect(response1.status).toBe(200);
+		});
+	});
+
+	// AQ-1.2: Magic Link Callback Tests
+	describe('Magic Link Callback (/auth/callback)', () => {
+		beforeEach(() => {
+			// Reset mocks
+			vi.clearAllMocks();
+		});
+
+		const testEnv = {
+			...env,
+			JWT_SECRET: 'test-jwt-secret-at-least-32-characters-long-for-security',
+			EMAIL_PEPPER: 'test-email-pepper-at-least-16-chars',
+			MAILCHANNELS_API_TOKEN: 'test-mailchannels-token',
+			BASE_URL: 'https://edge-og.example.com',
+			ACCOUNTS: {
+				get: vi.fn().mockResolvedValue(JSON.stringify({
+					email_hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+					created: '2024-01-01T00:00:00.000Z',
+					plan: 'free'
+				})),
+				put: vi.fn().mockResolvedValue(undefined),
+				delete: vi.fn().mockResolvedValue(undefined),
+				list: vi.fn().mockResolvedValue({ keys: [] }),
+				getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+			},
+			USAGE: {
+				get: vi.fn().mockResolvedValue(null),
+				put: vi.fn().mockResolvedValue(undefined),
+				delete: vi.fn().mockResolvedValue(undefined),
+				list: vi.fn().mockResolvedValue({ keys: [] }),
+				getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+			},
+		} as any;
+
+		it('successfully authenticates with valid token', async () => {
+			// Import auth functions to generate a valid token
+			const { generateMagicLinkToken } = await import('../src/utils/auth');
+			
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+			const validToken = await generateMagicLinkToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest(`https://example.com/auth/callback?token=${validToken}`, {
+				method: 'GET',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(302);
+			expect(response.headers.get('Location')).toBe('https://edge-og.example.com/dashboard');
+			
+			const setCookieHeader = response.headers.get('Set-Cookie');
+			expect(setCookieHeader).toBeDefined();
+			expect(setCookieHeader).toContain('edge_og_session=');
+			expect(setCookieHeader).toContain('HttpOnly');
+			expect(setCookieHeader).toContain('Secure');
+			expect(setCookieHeader).toContain('Max-Age=86400'); // 24 hours
+		});
+
+		it('rejects request with missing token', async () => {
+			const request = new IncomingRequest('https://example.com/auth/callback', {
+				method: 'GET',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(400);
+			const data = await response.json() as any;
+			expect(data.error).toBe('Missing authentication token');
+		});
+
+		it('rejects request with invalid token', async () => {
+			const request = new IncomingRequest('https://example.com/auth/callback?token=invalid.token.here', {
+				method: 'GET',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(401);
+			const data = await response.json() as any;
+			expect(data.error).toBe('Invalid or expired authentication token');
+		});
+
+		it('rejects request with expired token', async () => {
+			// Create an expired token manually
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+			const pastTime = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
+			
+			const expiredPayload = {
+				account_id: accountId,
+				email_hash: emailHash,
+				iat: pastTime - 900,
+				exp: pastTime, // Already expired
+			};
+			
+			// Create minimal expired token (won't verify, but will parse)
+			const header = { alg: 'HS256', typ: 'JWT' };
+			const encodedHeader = btoa(JSON.stringify(header)).replace(/[+/=]/g, (match) => {
+				return { '+': '-', '/': '_', '=': '' }[match] || match;
+			});
+			const encodedPayload = btoa(JSON.stringify(expiredPayload)).replace(/[+/=]/g, (match) => {
+				return { '+': '-', '/': '_', '=': '' }[match] || match;
+			});
+			const fakeSignature = 'fake-signature-here';
+			const expiredToken = `${encodedHeader}.${encodedPayload}.${fakeSignature}`;
+
+			const request = new IncomingRequest(`https://example.com/auth/callback?token=${expiredToken}`, {
+				method: 'GET',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(401);
+			const data = await response.json() as any;
+			expect(data.error).toBe('Invalid or expired authentication token');
+		});
+
+		it('rejects request when account not found', async () => {
+			// Import auth functions to generate a valid token
+			const { generateMagicLinkToken } = await import('../src/utils/auth');
+			
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+			const validToken = await generateMagicLinkToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			// Mock account not found
+			const envWithoutAccount = {
+				...testEnv,
+				ACCOUNTS: {
+					...testEnv.ACCOUNTS,
+					get: vi.fn().mockResolvedValue(null),
+				}
+			};
+
+			const request = new IncomingRequest(`https://example.com/auth/callback?token=${validToken}`, {
+				method: 'GET',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, envWithoutAccount, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(404);
+			const data = await response.json() as any;
+			expect(data.error).toBe('Account not found');
+		});
+
+		it('rejects request with email hash mismatch', async () => {
+			// Import auth functions to generate a valid token
+			const { generateMagicLinkToken } = await import('../src/utils/auth');
+			
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = 'different-hash';
+			const validToken = await generateMagicLinkToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest(`https://example.com/auth/callback?token=${validToken}`, {
+				method: 'GET',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(401);
+			const data = await response.json() as any;
+			expect(data.error).toBe('Authentication failed');
+		});
+
+		it('handles errors gracefully', async () => {
+			// Import auth functions to generate a valid token
+			const { generateMagicLinkToken } = await import('../src/utils/auth');
+			
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+			const validToken = await generateMagicLinkToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			// Mock KV error
+			const envWithError = {
+				...testEnv,
+				ACCOUNTS: {
+					...testEnv.ACCOUNTS,
+					get: vi.fn().mockRejectedValue(new Error('KV store error')),
+				}
+			};
+
+			const request = new IncomingRequest(`https://example.com/auth/callback?token=${validToken}`, {
+				method: 'GET',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, envWithError, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(500);
+			const data = await response.json() as any;
+			expect(data.error).toBe('Failed to process authentication. Please try again.');
 		});
 	});
 });

@@ -36,6 +36,18 @@ export interface MagicLinkPayload {
 }
 
 /**
+ * Session token payload for 24h authentication
+ * Used after successful magic link verification
+ */
+export interface SessionPayload {
+	account_id: string;
+	email_hash: string;
+	exp: number; // Unix timestamp
+	iat: number; // Unix timestamp
+	type: 'session'; // Distinguish from magic link tokens
+}
+
+/**
  * Rate limiting configuration for magic link requests
  */
 const RATE_LIMIT = {
@@ -161,6 +173,144 @@ export async function generateMagicLinkToken(
 		});
 	
 	return `${signatureInput}.${encodedSignature}`;
+}
+
+/**
+ * Verify JWT token (magic link or session)
+ * Returns the decoded payload if valid, null if invalid/expired
+ */
+export async function verifyJWTToken<T extends { exp?: number }>(
+	token: string, 
+	jwtSecret: string
+): Promise<T | null> {
+	try {
+		const parts = token.split('.');
+		if (parts.length !== 3) {
+			return null;
+		}
+
+		const [encodedHeader, encodedPayload, encodedSignature] = parts;
+		
+		// Verify signature
+		const signatureInput = `${encodedHeader}.${encodedPayload}`;
+		const encoder = new TextEncoder();
+		const key = await crypto.subtle.importKey(
+			'raw',
+			encoder.encode(jwtSecret),
+			{ name: 'HMAC', hash: 'SHA-256' },
+			false,
+			['verify']
+		);
+		
+		// Decode signature from base64url
+		const signature = Uint8Array.from(
+			atob(encodedSignature.replace(/-/g, '+').replace(/_/g, '/').padEnd(encodedSignature.length + (4 - encodedSignature.length % 4) % 4, '=')),
+			c => c.charCodeAt(0)
+		);
+		
+		const isValid = await crypto.subtle.verify(
+			'HMAC', 
+			key, 
+			signature, 
+			encoder.encode(signatureInput)
+		);
+		
+		if (!isValid) {
+			return null;
+		}
+		
+		// Decode payload
+		const paddedPayload = encodedPayload.replace(/-/g, '+').replace(/_/g, '/').padEnd(encodedPayload.length + (4 - encodedPayload.length % 4) % 4, '=');
+		const payload = JSON.parse(atob(paddedPayload)) as T;
+		
+		// Check expiration
+		const now = Math.floor(Date.now() / 1000);
+		if (payload.exp && payload.exp < now) {
+			return null;
+		}
+		
+		return payload;
+	} catch (error) {
+		return null;
+	}
+}
+
+/**
+ * Generate session JWT token (24h expiry)
+ * Used after successful magic link verification
+ */
+export async function generateSessionToken(
+	accountId: string, 
+	emailHash: string, 
+	jwtSecret: string
+): Promise<string> {
+	const now = Math.floor(Date.now() / 1000);
+	const payload: SessionPayload = {
+		account_id: accountId,
+		email_hash: emailHash,
+		iat: now,
+		exp: now + (24 * 60 * 60), // 24 hours expiry
+		type: 'session',
+	};
+	
+	// Simple JWT implementation for Cloudflare Workers
+	const header = {
+		alg: 'HS256',
+		typ: 'JWT'
+	};
+	
+	const encodedHeader = btoa(JSON.stringify(header)).replace(/[+/=]/g, (match) => {
+		return { '+': '-', '/': '_', '=': '' }[match] || match;
+	});
+	
+	const encodedPayload = btoa(JSON.stringify(payload)).replace(/[+/=]/g, (match) => {
+		return { '+': '-', '/': '_', '=': '' }[match] || match;
+	});
+	
+	const signatureInput = `${encodedHeader}.${encodedPayload}`;
+	const encoder = new TextEncoder();
+	const key = await crypto.subtle.importKey(
+		'raw',
+		encoder.encode(jwtSecret),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign']
+	);
+	
+	const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(signatureInput));
+	const encodedSignature = btoa(String.fromCharCode(...new Uint8Array(signature)))
+		.replace(/[+/=]/g, (match) => {
+			return { '+': '-', '/': '_', '=': '' }[match] || match;
+		});
+	
+	return `${signatureInput}.${encodedSignature}`;
+}
+
+/**
+ * Update account last login timestamp
+ */
+export async function updateAccountLastLogin(
+	accountId: string,
+	env: Env
+): Promise<void> {
+	try {
+		const key = `account:${accountId}`;
+		const existingData = await env.ACCOUNTS.get(key);
+		
+		if (existingData) {
+			const accountData: AccountData = JSON.parse(existingData);
+			accountData.last_login = new Date().toISOString();
+			
+			await env.ACCOUNTS.put(key, JSON.stringify(accountData));
+		}
+	} catch (error) {
+		// Log but don't fail the authentication process
+		log({
+			event: 'account_last_login_update_failed',
+			account_id: accountId,
+			error: error instanceof Error ? error.message : 'Unknown error',
+		});
+	}
 }
 
 /**
@@ -302,7 +452,20 @@ export async function sendMagicLinkEmail(
 	magicLinkToken: string,
 	env: Env
 ): Promise<void> {
-	const baseUrl = env.BASE_URL || 'https://edge-og.example.com';
+	// Determine the correct base URL for the current environment
+	let baseUrl = env.BASE_URL;
+	
+	if (!baseUrl) {
+		// Default fallback - in production this should be set
+		baseUrl = 'https://edge-og.example.com';
+		
+		// In development/local testing, try to use localhost
+		// This is a heuristic - in a real app you'd set BASE_URL properly
+		if (env.RESEND_API_KEY === 'dev-placeholder-token' || !env.RESEND_API_KEY) {
+			baseUrl = 'http://localhost:8788';
+		}
+	}
+	
 	const magicLinkUrl = `${baseUrl}/auth/callback?token=${magicLinkToken}`;
 	
 	const emailContent = {

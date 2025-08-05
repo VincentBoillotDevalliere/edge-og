@@ -37,7 +37,13 @@ import {
 	generateMagicLinkToken,
 	sendMagicLinkEmail,
 	checkRateLimit,
-	validateAuthEnvironment
+	validateAuthEnvironment,
+	// AQ-1.2: Magic link callback imports
+	verifyJWTToken,
+	generateSessionToken,
+	updateAccountLastLogin,
+	MagicLinkPayload,
+	SessionPayload
 } from './utils/auth';
 
 // Constants for rate limiting and security
@@ -63,6 +69,16 @@ export default {
 				
 				// Log request
 				logRequest('magic_link_requested', startTime, response.status, requestId);
+				
+				return response;
+			}
+
+			// Route: GET /auth/callback for magic-link authentication (AQ-1.2)
+			if (url.pathname === '/auth/callback' && request.method === 'GET') {
+				const response = await handleMagicLinkCallback(url, requestId, env);
+				
+				// Log request
+				logRequest('magic_link_callback', startTime, response.status, requestId);
 				
 				return response;
 			}
@@ -584,6 +600,169 @@ async function handleMagicLinkRequest(
 		return new Response(
 			JSON.stringify({
 				error: 'Failed to process magic link request. Please try again.',
+				request_id: requestId,
+			}),
+			{
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
+	}
+}
+
+/**
+ * Handle magic-link callback authentication
+ * Implements AQ-1.2: En tant qu'utilisateur, je suis authentifié après clic sur le lien
+ * 
+ * Acceptance criteria:
+ * • GET `/auth/callback?token=` pose cookie `edge_og_session` (JWT 24 h)
+ * • Redirection `/dashboard`
+ */
+async function handleMagicLinkCallback(
+	url: URL,
+	requestId: string,
+	env: Env
+): Promise<Response> {
+	try {
+		// Validate environment configuration
+		validateAuthEnvironment(env);
+
+		// Get token from query parameters
+		const token = url.searchParams.get('token');
+		if (!token) {
+			log({
+				event: 'magic_link_callback_missing_token',
+				request_id: requestId,
+			});
+
+			return new Response(
+				JSON.stringify({
+					error: 'Missing authentication token',
+					request_id: requestId,
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Verify magic link token
+		const payload = await verifyJWTToken<MagicLinkPayload>(token, env.JWT_SECRET as string);
+		if (!payload) {
+			log({
+				event: 'magic_link_callback_invalid_token',
+				request_id: requestId,
+			});
+
+			return new Response(
+				JSON.stringify({
+					error: 'Invalid or expired authentication token',
+					request_id: requestId,
+				}),
+				{
+					status: 401,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Verify account still exists and get data
+		const key = `account:${payload.account_id}`;
+		const accountDataRaw = await env.ACCOUNTS.get(key);
+		
+		if (!accountDataRaw) {
+			log({
+				event: 'magic_link_callback_account_not_found',
+				account_id: payload.account_id,
+				request_id: requestId,
+			});
+
+			return new Response(
+				JSON.stringify({
+					error: 'Account not found',
+					request_id: requestId,
+				}),
+				{
+					status: 404,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Verify email hash matches (security check)
+		const accountData = JSON.parse(accountDataRaw) as { email_hash: string; created: string; plan: string };
+		if (accountData.email_hash !== payload.email_hash) {
+			log({
+				event: 'magic_link_callback_email_hash_mismatch',
+				account_id: payload.account_id,
+				request_id: requestId,
+			});
+
+			return new Response(
+				JSON.stringify({
+					error: 'Authentication failed',
+					request_id: requestId,
+				}),
+				{
+					status: 401,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Generate 24h session token
+		const sessionToken = await generateSessionToken(
+			payload.account_id,
+			payload.email_hash,
+			env.JWT_SECRET as string
+		);
+
+		// Update account last login timestamp
+		await updateAccountLastLogin(payload.account_id, env);
+
+		// Get base URL for dashboard redirect
+		const baseUrl = env.BASE_URL || `${url.protocol}//${url.host}`;
+		const dashboardUrl = `${baseUrl}/dashboard`;
+
+		// Set secure session cookie and redirect
+		const headers = new Headers();
+		headers.set('Location', dashboardUrl);
+		
+		// Set secure HTTP-only session cookie
+		const cookieOptions = [
+			`edge_og_session=${sessionToken}`,
+			'HttpOnly',
+			'Secure',
+			'SameSite=Lax',
+			'Path=/',
+			'Max-Age=86400' // 24 hours
+		];
+		
+		headers.set('Set-Cookie', cookieOptions.join('; '));
+
+		log({
+			event: 'magic_link_callback_success',
+			account_id: payload.account_id,
+			request_id: requestId,
+		});
+
+		return new Response(null, {
+			status: 302,
+			headers,
+		});
+
+	} catch (error) {
+		log({
+			event: 'magic_link_callback_failed',
+			error: error instanceof Error ? error.message : 'Unknown error',
+			request_id: requestId,
+		});
+
+		// Return error response
+		return new Response(
+			JSON.stringify({
+				error: 'Failed to process authentication. Please try again.',
 				request_id: requestId,
 			}),
 			{

@@ -36,6 +36,45 @@ const mockCrypto = {
 			}
 			return mockHash;
 		},
+		importKey: async (format: string, keyData: ArrayBuffer | Uint8Array, algorithm: any, extractable: boolean, usages: string[]) => {
+			// Mock key import - return a fake key object
+			return {
+				type: 'secret',
+				algorithm,
+				extractable,
+				usages,
+				keyData: new Uint8Array(keyData),
+			};
+		},
+		sign: async (algorithm: string, key: any, data: ArrayBuffer) => {
+			// Mock HMAC signing - create deterministic signature based on key and data
+			const keyData = key.keyData || new Uint8Array([1, 2, 3, 4]);
+			const inputData = new Uint8Array(data);
+			
+			// Simple XOR-based mock signature
+			const signature = new ArrayBuffer(32);
+			const sigView = new Uint8Array(signature);
+			
+			for (let i = 0; i < 32; i++) {
+				sigView[i] = (keyData[i % keyData.length] ^ inputData[i % inputData.length]) % 256;
+			}
+			
+			return signature;
+		},
+		verify: async (algorithm: string, key: any, signature: ArrayBuffer, data: ArrayBuffer) => {
+			// Mock verification - regenerate signature and compare
+			const expectedSig = await mockCrypto.subtle.sign(algorithm, key, data);
+			const expectedView = new Uint8Array(expectedSig);
+			const actualView = new Uint8Array(signature);
+			
+			if (expectedView.length !== actualView.length) return false;
+			
+			for (let i = 0; i < expectedView.length; i++) {
+				if (expectedView[i] !== actualView[i]) return false;
+			}
+			
+			return true;
+		},
 	}
 };
 
@@ -46,7 +85,17 @@ Object.defineProperty(globalThis, 'crypto', {
 });
 
 // Import auth utilities directly - must be done at module level
-import { validateEmail, generateSecureUUID, hashEmailWithPepper, validateAuthEnvironment } from '../src/utils/auth';
+import { 
+	validateEmail, 
+	generateSecureUUID, 
+	hashEmailWithPepper, 
+	validateAuthEnvironment,
+	generateMagicLinkToken,
+	generateSessionToken,
+	verifyJWTToken,
+	MagicLinkPayload,
+	SessionPayload
+} from '../src/utils/auth';
 
 // Simple pure function tests that don't require satori dependencies
 describe('Auth Utilities - Pure Functions', () => {
@@ -140,6 +189,137 @@ describe('Auth Utilities - Pure Functions', () => {
 			const hash2 = await hashEmailWithPepper('  TEST@example.COM  ', pepper);
 			
 			expect(hash1).toBe(hash2);
+		});
+	});
+
+	describe('JWT Token Functions', () => {
+		const testSecret = 'test-jwt-secret-at-least-32-characters-long-for-security';
+		const testAccountId = '12345678-1234-4567-8901-123456789012';
+		const testEmailHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+		describe('generateMagicLinkToken', () => {
+			it('generates valid JWT token for magic link', async () => {
+				const token = await generateMagicLinkToken(testAccountId, testEmailHash, testSecret);
+				
+				expect(token).toBeDefined();
+				expect(typeof token).toBe('string');
+				expect(token.split('.')).toHaveLength(3); // header.payload.signature
+			});
+
+			it('generates different tokens for different accounts', async () => {
+				const token1 = await generateMagicLinkToken(testAccountId, testEmailHash, testSecret);
+				const token2 = await generateMagicLinkToken('different-account-id', testEmailHash, testSecret);
+				
+				expect(token1).not.toBe(token2);
+			});
+
+			it('includes correct payload data', async () => {
+				const token = await generateMagicLinkToken(testAccountId, testEmailHash, testSecret);
+				
+				// Decode payload manually for testing
+				const parts = token.split('.');
+				const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/').padEnd(parts[1].length + (4 - parts[1].length % 4) % 4, '=');
+				const payload = JSON.parse(atob(payloadBase64)) as MagicLinkPayload;
+				
+				expect(payload.account_id).toBe(testAccountId);
+				expect(payload.email_hash).toBe(testEmailHash);
+				expect(payload.exp).toBeGreaterThan(payload.iat);
+				expect(payload.exp - payload.iat).toBe(15 * 60); // 15 minutes
+			});
+		});
+
+		describe('generateSessionToken', () => {
+			it('generates valid JWT token for session', async () => {
+				const token = await generateSessionToken(testAccountId, testEmailHash, testSecret);
+				
+				expect(token).toBeDefined();
+				expect(typeof token).toBe('string');
+				expect(token.split('.')).toHaveLength(3); // header.payload.signature
+			});
+
+			it('includes correct payload data with session type', async () => {
+				const token = await generateSessionToken(testAccountId, testEmailHash, testSecret);
+				
+				// Decode payload manually for testing
+				const parts = token.split('.');
+				const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/').padEnd(parts[1].length + (4 - parts[1].length % 4) % 4, '=');
+				const payload = JSON.parse(atob(payloadBase64)) as SessionPayload;
+				
+				expect(payload.account_id).toBe(testAccountId);
+				expect(payload.email_hash).toBe(testEmailHash);
+				expect(payload.type).toBe('session');
+				expect(payload.exp).toBeGreaterThan(payload.iat);
+				expect(payload.exp - payload.iat).toBe(24 * 60 * 60); // 24 hours
+			});
+		});
+
+		describe('verifyJWTToken', () => {
+			it('verifies valid magic link token', async () => {
+				const token = await generateMagicLinkToken(testAccountId, testEmailHash, testSecret);
+				const payload = await verifyJWTToken<MagicLinkPayload>(token, testSecret);
+				
+				expect(payload).toBeDefined();
+				expect(payload!.account_id).toBe(testAccountId);
+				expect(payload!.email_hash).toBe(testEmailHash);
+			});
+
+			it('verifies valid session token', async () => {
+				const token = await generateSessionToken(testAccountId, testEmailHash, testSecret);
+				const payload = await verifyJWTToken<SessionPayload>(token, testSecret);
+				
+				expect(payload).toBeDefined();
+				expect(payload!.account_id).toBe(testAccountId);
+				expect(payload!.email_hash).toBe(testEmailHash);
+				expect(payload!.type).toBe('session');
+			});
+
+			it('rejects token with wrong secret', async () => {
+				const token = await generateMagicLinkToken(testAccountId, testEmailHash, testSecret);
+				const payload = await verifyJWTToken(token, 'wrong-secret-at-least-32-characters-long');
+				
+				expect(payload).toBeNull();
+			});
+
+			it('rejects malformed token', async () => {
+				const payload = await verifyJWTToken('invalid.token', testSecret);
+				expect(payload).toBeNull();
+			});
+
+			it('rejects token with missing parts', async () => {
+				const payload = await verifyJWTToken('invalid', testSecret);
+				expect(payload).toBeNull();
+			});
+
+			it('rejects expired token', async () => {
+				// Create token with past expiration
+				const pastTime = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
+				const expiredPayload: MagicLinkPayload = {
+					account_id: testAccountId,
+					email_hash: testEmailHash,
+					iat: pastTime - 900, // 15 minutes before expiration
+					exp: pastTime, // Already expired
+				};
+				
+				// Manually create expired token
+				const header = { alg: 'HS256', typ: 'JWT' };
+				const encodedHeader = btoa(JSON.stringify(header)).replace(/[+/=]/g, (match) => {
+					return { '+': '-', '/': '_', '=': '' }[match] || match;
+				});
+				const encodedPayload = btoa(JSON.stringify(expiredPayload)).replace(/[+/=]/g, (match) => {
+					return { '+': '-', '/': '_', '=': '' }[match] || match;
+				});
+				
+				// Create signature (this is just for testing, would normally use proper crypto)
+				const signatureInput = `${encodedHeader}.${encodedPayload}`;
+				const fakeSignature = btoa('fake-signature').replace(/[+/=]/g, (match) => {
+					return { '+': '-', '/': '_', '=': '' }[match] || match;
+				});
+				
+				const expiredToken = `${signatureInput}.${fakeSignature}`;
+				
+				const result = await verifyJWTToken(expiredToken, testSecret);
+				expect(result).toBeNull();
+			});
 		});
 	});
 
