@@ -48,6 +48,19 @@ export interface SessionPayload {
 }
 
 /**
+ * API key data structure stored in KV
+ * Schema: key:{kid} → { account, hash, name, revoked, created, last_used }
+ */
+export interface APIKeyData {
+	account: string; // Account ID
+	hash: string; // HMAC-SHA256 hash of the secret
+	name: string; // User-friendly name for the key
+	revoked: boolean;
+	created: string; // ISO timestamp
+	last_used?: string; // ISO timestamp
+}
+
+/**
  * Rate limiting configuration for magic link requests
  */
 const RATE_LIMIT = {
@@ -55,6 +68,35 @@ const RATE_LIMIT = {
 	WINDOW_MINUTES: 5,
 	WINDOW_MS: 5 * 60 * 1000, // 5 minutes in milliseconds
 };
+
+/**
+ * Base62 alphabet for API key encoding
+ */
+const BASE62_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+
+/**
+ * Encode bytes to base62 string
+ * Used for generating API key prefixes and secrets
+ */
+function encodeBase62(bytes: Uint8Array): string {
+	let result = '';
+	let bigInt = 0n;
+	
+	// Convert bytes to a big integer
+	for (let i = 0; i < bytes.length; i++) {
+		bigInt = bigInt * 256n + BigInt(bytes[i]);
+	}
+	
+	// Convert to base62
+	while (bigInt > 0n) {
+		const remainder = Number(bigInt % 62n);
+		result = BASE62_ALPHABET[remainder] + result;
+		bigInt = bigInt / 62n;
+	}
+	
+	// Ensure minimum length by padding with zeros
+	return result || '0';
+}
 
 /**
  * Generate cryptographically secure UUID v4
@@ -634,4 +676,230 @@ export function validateAuthEnvironment(env: Env): void {
 	if (emailPepper.length < 16) {
 		throw new WorkerError('EMAIL_PEPPER must be at least 16 characters for security', 500);
 	}
+}
+
+/**
+ * Generate secure API key with prefix and secret
+ * Implements AQ-2.1: Generate API key with base62 64 characters
+ * 
+ * @param accountId - Account ID to associate the key with
+ * @param name - Human-readable name for the key
+ * @param env - Environment bindings
+ * @returns Object with kid, prefix, fullKey, and hash
+ */
+export async function generateAPIKey(
+	accountId: string,
+	name: string,
+	env: Env
+): Promise<{
+	kid: string;
+	prefix: string;
+	fullKey: string;
+	hash: string;
+}> {
+	// Generate 32 bytes for the key ID (kid) - used as prefix
+	const kidBytes = new Uint8Array(8); // 8 bytes for prefix
+	crypto.getRandomValues(kidBytes);
+	const kid = encodeBase62(kidBytes);
+	
+	// Generate 32 bytes for the secret part
+	const secretBytes = new Uint8Array(24); // 24 bytes for secret
+	crypto.getRandomValues(secretBytes);
+	const secret = encodeBase62(secretBytes);
+	
+	// Combine prefix and secret to create the full key (targeting 64 chars total)
+	const prefix = `eog_${kid}`;
+	const fullKey = `${prefix}_${secret}`;
+	
+	// Generate HMAC-SHA256 hash of the full key for storage
+	const hash = await generateAPIKeyHash(fullKey, env.JWT_SECRET as string);
+	
+	return { kid, prefix, fullKey, hash };
+}
+
+/**
+ * Generate HMAC-SHA256 hash of API key for secure storage
+ * 
+ * @param apiKey - The full API key string
+ * @param secret - Secret for HMAC generation
+ * @returns Hexadecimal hash string
+ */
+export async function generateAPIKeyHash(apiKey: string, secret: string): Promise<string> {
+	const encoder = new TextEncoder();
+	const key = await crypto.subtle.importKey(
+		'raw',
+		encoder.encode(secret),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign']
+	);
+	
+	const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(apiKey));
+	const hashArray = new Uint8Array(signature);
+	
+	return Array.from(hashArray)
+		.map(b => b.toString(16).padStart(2, '0'))
+		.join('');
+}
+
+/**
+ * Store API key data in KV
+ * Implements KV schema: key:{kid} → { account, hash, name, revoked, created, last_used }
+ * 
+ * @param kid - Key ID (used as KV key suffix)
+ * @param accountId - Account ID that owns this key
+ * @param hash - HMAC-SHA256 hash of the API key
+ * @param name - Human-readable name for the key
+ * @param env - Environment bindings
+ */
+export async function storeAPIKey(
+	kid: string,
+	accountId: string,
+	hash: string,
+	name: string,
+	env: Env
+): Promise<void> {
+	const apiKeyData: APIKeyData = {
+		account: accountId,
+		hash,
+		name,
+		revoked: false,
+		created: new Date().toISOString(),
+	};
+	
+	const key = `key:${kid}`;
+	
+	try {
+		await env.API_KEYS.put(key, JSON.stringify(apiKeyData), {
+			metadata: {
+				account: accountId,
+				created_at: Date.now(),
+				name,
+			}
+		});
+		
+		log({
+			event: 'api_key_created',
+			account_id: accountId,
+			key_id: kid,
+			key_name: name,
+			timestamp: new Date().toISOString(),
+		});
+	} catch (error) {
+		log({
+			event: 'api_key_creation_failed',
+			account_id: accountId,
+			key_id: kid,
+			error: error instanceof Error ? error.message : 'Unknown error',
+		});
+		throw new WorkerError('Failed to store API key', 500);
+	}
+}
+
+/**
+ * Verify API key authentication
+ * Implements AQ-2.3: Worker validates Authorization Bearer header
+ * 
+ * @param authHeader - Authorization header value
+ * @param env - Environment bindings
+ * @returns Account ID if valid, null if invalid
+ */
+export async function verifyAPIKey(authHeader: string, env: Env): Promise<string | null> {
+	if (!authHeader.startsWith('Bearer ')) {
+		return null;
+	}
+	
+	const apiKey = authHeader.substring(7); // Remove "Bearer " prefix
+	
+	// Extract kid from the API key prefix
+	if (!apiKey.startsWith('eog_')) {
+		return null;
+	}
+	
+	const parts = apiKey.split('_');
+	if (parts.length !== 3) {
+		return null;
+	}
+	
+	const kid = parts[1];
+	
+	try {
+		// Look up the API key data
+		const keyData = await env.API_KEYS.get(`key:${kid}`, 'json') as APIKeyData | null;
+		
+		if (!keyData || keyData.revoked) {
+			return null;
+		}
+		
+		// Verify the hash
+		const expectedHash = await generateAPIKeyHash(apiKey, env.JWT_SECRET as string);
+		
+		// Use constant-time comparison to prevent timing attacks
+		if (!constantTimeCompare(keyData.hash, expectedHash)) {
+			return null;
+		}
+		
+		// Update last used timestamp asynchronously
+		updateAPIKeyLastUsed(kid, env).catch(error => {
+			log({
+				event: 'api_key_last_used_update_failed',
+				key_id: kid,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+		});
+		
+		return keyData.account;
+	} catch (error) {
+		log({
+			event: 'api_key_verification_failed',
+			key_id: kid,
+			error: error instanceof Error ? error.message : 'Unknown error',
+		});
+		return null;
+	}
+}
+
+/**
+ * Update API key last used timestamp
+ * 
+ * @param kid - Key ID
+ * @param env - Environment bindings
+ */
+async function updateAPIKeyLastUsed(kid: string, env: Env): Promise<void> {
+	try {
+		const key = `key:${kid}`;
+		const existingData = await env.API_KEYS.get(key, 'json') as APIKeyData | null;
+		
+		if (existingData) {
+			existingData.last_used = new Date().toISOString();
+			await env.API_KEYS.put(key, JSON.stringify(existingData));
+		}
+	} catch (error) {
+		// Log but don't fail - this is not critical
+		log({
+			event: 'api_key_last_used_update_failed',
+			key_id: kid,
+			error: error instanceof Error ? error.message : 'Unknown error',
+		});
+	}
+}
+
+/**
+ * Constant-time string comparison to prevent timing attacks
+ * 
+ * @param a - First string
+ * @param b - Second string
+ * @returns True if strings are equal
+ */
+function constantTimeCompare(a: string, b: string): boolean {
+	if (a.length !== b.length) {
+		return false;
+	}
+	
+	let result = 0;
+	for (let i = 0; i < a.length; i++) {
+		result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	}
+	
+	return result === 0;
 }

@@ -6,6 +6,7 @@ declare namespace Cloudflare {
 		TEMPLATES: KVNamespace;
 		USAGE: KVNamespace;
 		ACCOUNTS: KVNamespace;
+		API_KEYS: KVNamespace;
 		SEND_EMAIL?: SendEmail;
 		// Authentication & Security
 		JWT_SECRET?: string;
