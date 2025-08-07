@@ -779,6 +779,7 @@ describe('Edge-OG Worker', () => {
 			...env,
 			JWT_SECRET: 'test-jwt-secret-at-least-32-characters-long',
 			EMAIL_PEPPER: 'test-email-pepper-16chars',
+			RESEND_API_KEY: 'resend_test_key_placeholder', // Force development mode
 			MAILCHANNELS_API_TOKEN: 'test-mailchannels-token',
 			BASE_URL: 'https://test.edge-og.com',
 			// Add mock KV namespaces to avoid undefined errors
@@ -807,15 +808,6 @@ describe('Edge-OG Worker', () => {
 				getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
 			},
 		} as any;
-
-		// Mock sendMagicLinkEmail to avoid external API calls
-		vi.doMock('../src/utils/auth', async () => {
-			const actual = await vi.importActual('../src/utils/auth');
-			return {
-				...actual,
-				sendMagicLinkEmail: vi.fn().mockResolvedValue(undefined),
-			};
-		});
 
 		it('creates account with valid email (JSON body)', async () => {
 			const request = new IncomingRequest('https://example.com/auth/request-link', {
