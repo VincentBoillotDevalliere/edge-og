@@ -203,7 +203,7 @@ async function handleOGImageGeneration(
 	const cacheStatus = getCacheStatus(request);
 
 	// Validate and extract query parameters
-	const params = validateOGParams(url.searchParams);
+	const params = validateOGParams(url.searchParams, requestId);
 	
 	// EC-1: Normalize parameters for consistent caching
 	const normalizedParams = normalizeParams(url.searchParams);
@@ -327,7 +327,7 @@ async function handleOGImageGeneration(
  * As per security requirements: validate all query params, max 200 chars decoded UTF-8
  * Implements CG-2: Theme and font parameters with fallback values
  */
-function validateOGParams(searchParams: URLSearchParams): {
+function validateOGParams(searchParams: URLSearchParams, requestId: string): {
 	title?: string;
 	description?: string;
 	theme?: 'light' | 'dark' | 'blue' | 'green' | 'purple';
@@ -381,23 +381,23 @@ function validateOGParams(searchParams: URLSearchParams): {
 
 	// Validate text length (max 200 chars as per security requirements)
 	if (title && title.length > 200) {
-		throw new WorkerError('Title parameter too long (max 200 characters)', 400);
+		throw new WorkerError('Title parameter too long (max 200 characters)', 400, requestId);
 	}
 
 	if (description && description.length > 200) {
-		throw new WorkerError('Description parameter too long (max 200 characters)', 400);
+		throw new WorkerError('Description parameter too long (max 200 characters)', 400, requestId);
 	}
 
 	// Validate theme parameter - extended color themes with fallback to 'light'
 	const validThemes = ['light', 'dark', 'blue', 'green', 'purple'];
 	if (theme && !validThemes.includes(theme)) {
-		throw new WorkerError('Invalid theme parameter. Must be one of: light, dark, blue, green, purple', 400);
+		throw new WorkerError('Invalid theme parameter. Must be one of: light, dark, blue, green, purple', 400, requestId);
 	}
 
 	// Validate font parameter - supported fonts with fallback to 'inter'
 	const validFonts = ['inter', 'roboto', 'playfair', 'opensans'];
 	if (font && !validFonts.includes(font)) {
-		throw new WorkerError('Invalid font parameter. Must be one of: inter, roboto, playfair, opensans', 400);
+		throw new WorkerError('Invalid font parameter. Must be one of: inter, roboto, playfair, opensans', 400, requestId);
 	}
 
 	// CG-4: Validate fontUrl parameter - must be valid HTTPS URL to TTF/OTF
@@ -406,29 +406,29 @@ function validateOGParams(searchParams: URLSearchParams): {
 			const url = new URL(fontUrl);
 			// Security: Only allow HTTPS URLs
 			if (url.protocol !== 'https:') {
-				throw new WorkerError('Custom font URL must use HTTPS', 400);
+				throw new WorkerError('Custom font URL must use HTTPS', 400, requestId);
 			}
 			// Basic validation for font file extensions
 			const pathname = url.pathname.toLowerCase();
 			if (!pathname.endsWith('.ttf') && !pathname.endsWith('.otf') && !pathname.endsWith('.woff') && !pathname.endsWith('.woff2')) {
-				throw new WorkerError('Custom font URL must point to a TTF, OTF, WOFF, or WOFF2 file', 400);
+				throw new WorkerError('Custom font URL must point to a TTF, OTF, WOFF, or WOFF2 file', 400, requestId);
 			}
 		} catch (error) {
 			if (error instanceof WorkerError) throw error;
-			throw new WorkerError('Invalid fontUrl parameter. Must be a valid HTTPS URL', 400);
+			throw new WorkerError('Invalid fontUrl parameter. Must be a valid HTTPS URL', 400, requestId);
 		}
 	}
 
 	// Validate format parameter (development use)
 	const validFormats = ['png', 'svg'];
 	if (format && !validFormats.includes(format)) {
-		throw new WorkerError('Invalid format parameter. Must be "png" or "svg"', 400);
+		throw new WorkerError('Invalid format parameter. Must be "png" or "svg"', 400, requestId);
 	}
 
 	// CG-3: Validate template parameter - support all 10 templates
 	const validTemplates = ['default', 'blog', 'product', 'event', 'quote', 'minimal', 'news', 'tech', 'podcast', 'portfolio', 'course'];
 	if (template && !validTemplates.includes(template)) {
-		throw new WorkerError(`Invalid template parameter. Must be one of: ${validTemplates.join(', ')}`, 400);
+		throw new WorkerError(`Invalid template parameter. Must be one of: ${validTemplates.join(', ')}`, 400, requestId);
 	}
 
 	return {

@@ -561,7 +561,7 @@ export async function sendMagicLinkEmail(
 		const resendToken = env.RESEND_API_KEY;
 		
 		// In development mode, simulate email sending
-		if (!resendToken || resendToken === 'dev-placeholder-token') {
+		if (!resendToken || resendToken === 'dev-placeholder-token' || resendToken === 'resend_test_key_placeholder' || resendToken.startsWith('TEST_')) {
 			log({
 				event: 'magic_link_email_simulated',
 				email_domain: email.split('@')[1],

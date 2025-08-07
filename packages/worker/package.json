@@ -9,12 +9,17 @@
 		"test": "vitest",
 		"test:ui": "vitest --ui",
 		"test:verbose": "vitest --reporter=verbose",
+		"test:e2e": "vitest e2e.spec.ts --run",
+		"test:unit": "vitest --run --exclude=e2e.spec.ts",
+		"test:all": "./run-all-tests.sh",
+		"test:coverage": "vitest --coverage --run",
 		"coverage": "./coverage-report.sh",
 		"cf-typegen": "wrangler types"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.8.19",
 		"@cloudflare/workers-types": "^4.20250726.0",
+		"@vitest/coverage-v8": "3.2.4",
 		"typescript": "^5.5.2",
 		"vitest": "~3.2.0",
 		"wrangler": "^4.26.0"

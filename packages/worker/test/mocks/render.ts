@@ -2,6 +2,9 @@ import { vi } from 'vitest';
 
 // Mock the render function to avoid Satori dependency issues in tests
 export const mockRenderOpenGraphImage = vi.fn().mockImplementation(async (params) => {
+	// Simulate some processing time
+	await new Promise(resolve => setTimeout(resolve, 5));
+	
 	// Return a fake PNG buffer for testing
 	const fakeImage = new ArrayBuffer(1000);
 	const view = new Uint8Array(fakeImage);
