@@ -43,7 +43,11 @@ import {
 	generateSessionToken,
 	updateAccountLastLogin,
 	MagicLinkPayload,
-	SessionPayload
+	SessionPayload,
+	// AQ-2.1: API key generation imports
+	generateAPIKey,
+	storeAPIKey,
+	verifyAPIKey
 } from './utils/auth';
 
 // Constants for rate limiting and security
@@ -89,6 +93,16 @@ export default {
 				
 				// Log request
 				logRequest('dashboard_accessed', startTime, response.status, requestId);
+				
+				return response;
+			}
+
+			// Route: POST /dashboard/api-keys for API key generation (AQ-2.1)
+			if (url.pathname === '/dashboard/api-keys' && request.method === 'POST') {
+				const response = await handleAPIKeyGeneration(request, requestId, env);
+				
+				// Log request
+				logRequest('api_key_generated', startTime, response.status, requestId);
 				
 				return response;
 			}
@@ -881,7 +895,8 @@ async function handleDashboard(
 		});
 
 		// Serve dashboard HTML
-		const dashboardHtml = getDashboardHTML(payload.account_id, accountData.plan);
+		const baseUrl = env.BASE_URL || `${new URL(request.url).protocol}//${new URL(request.url).host}`;
+		const dashboardHtml = getDashboardHTML(payload.account_id, accountData.plan, baseUrl);
 		
 		return new Response(dashboardHtml, {
 			status: 200,
@@ -913,9 +928,218 @@ async function handleDashboard(
 }
 
 /**
+ * Handle API key generation for authenticated users
+ * Implements AQ-2.1: Je génère une clé API depuis `/dashboard/api-keys`
+ * 
+ * Acceptance criteria:
+ * • POST renvoie `prefix + secret` (base62 64 car.)
+ * • KV `key:{kid}` stocke HMAC-SHA256 du secret
+ */
+async function handleAPIKeyGeneration(
+	request: Request,
+	requestId: string,
+	env: Env
+): Promise<Response> {
+	try {
+		// Validate environment configuration
+		validateAuthEnvironment(env);
+
+		// Check for session cookie - user must be authenticated
+		const cookieHeader = request.headers.get('Cookie');
+		let sessionToken = '';
+		
+		if (cookieHeader) {
+			// Parse cookies to find edge_og_session
+			const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
+				const trimmed = cookie.trim();
+				const equalIndex = trimmed.indexOf('=');
+				if (equalIndex > 0) {
+					const key = trimmed.substring(0, equalIndex);
+					const value = trimmed.substring(equalIndex + 1);
+					acc[key] = value;
+				}
+				return acc;
+			}, {} as Record<string, string>);
+			
+			sessionToken = cookies['edge_og_session'] || '';
+		}
+
+		if (!sessionToken) {
+			log({
+				event: 'api_key_generation_no_session',
+				request_id: requestId,
+			});
+
+			return new Response(
+				JSON.stringify({
+					error: 'Authentication required. Please log in first.',
+					request_id: requestId,
+				}),
+				{
+					status: 401,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Verify session token
+		const payload = await verifyJWTToken<SessionPayload>(sessionToken, env.JWT_SECRET as string);
+		if (!payload) {
+			log({
+				event: 'api_key_generation_invalid_session',
+				request_id: requestId,
+			});
+
+			return new Response(
+				JSON.stringify({
+					error: 'Invalid or expired session. Please log in again.',
+					request_id: requestId,
+				}),
+				{
+					status: 401,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Verify account still exists
+		const accountKey = `account:${payload.account_id}`;
+		const accountDataRaw = await env.ACCOUNTS.get(accountKey);
+		
+		if (!accountDataRaw) {
+			log({
+				event: 'api_key_generation_account_not_found',
+				account_id: payload.account_id,
+				request_id: requestId,
+			});
+
+			return new Response(
+				JSON.stringify({
+					error: 'Account not found.',
+					request_id: requestId,
+				}),
+				{
+					status: 404,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Parse request body to get the key name
+		const contentType = request.headers.get('Content-Type') || '';
+		let keyName = '';
+
+		if (contentType.includes('application/json')) {
+			const body = await request.json() as { name?: string };
+			keyName = body.name || '';
+		} else if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+			const formData = await request.formData();
+			keyName = formData.get('name')?.toString() || '';
+		} else {
+			return new Response(
+				JSON.stringify({
+					error: 'Content-Type must be application/json or application/x-www-form-urlencoded',
+					request_id: requestId,
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Validate key name
+		if (!keyName || keyName.trim().length === 0) {
+			return new Response(
+				JSON.stringify({
+					error: 'API key name is required',
+					request_id: requestId,
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		if (keyName.length > 100) {
+			return new Response(
+				JSON.stringify({
+					error: 'API key name must be 100 characters or less',
+					request_id: requestId,
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Generate the API key
+		const { kid, prefix, fullKey, hash } = await generateAPIKey(
+			payload.account_id,
+			keyName.trim(),
+			env
+		);
+
+		// Store the API key data in KV
+		await storeAPIKey(kid, payload.account_id, hash, keyName.trim(), env);
+
+		// Log successful API key generation
+		log({
+			event: 'api_key_generated_success',
+			account_id: payload.account_id,
+			key_id: kid,
+			key_name: keyName.trim(),
+			request_id: requestId,
+		});
+
+		// Return the API key (this is the only time the full key is exposed)
+		return new Response(
+			JSON.stringify({
+				success: true,
+				message: 'API key generated successfully',
+				api_key: {
+					id: kid,
+					name: keyName.trim(),
+					prefix: prefix,
+					key: fullKey, // Full key including prefix and secret
+					created: new Date().toISOString(),
+				},
+				request_id: requestId,
+				warning: 'Store this API key securely. It will not be shown again.',
+			}),
+			{
+				status: 201,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
+
+	} catch (error) {
+		log({
+			event: 'api_key_generation_failed',
+			error: error instanceof Error ? error.message : 'Unknown error',
+			request_id: requestId,
+		});
+
+		// Don't expose internal errors to client
+		return new Response(
+			JSON.stringify({
+				error: 'Failed to generate API key. Please try again.',
+				request_id: requestId,
+			}),
+			{
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
+	}
+}
+
+/**
  * Generate dashboard HTML for authenticated users
  */
-function getDashboardHTML(accountId: string, plan: string): string {
+function getDashboardHTML(accountId: string, plan: string, baseUrl: string): string {
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1107,11 +1331,109 @@ GET /og?title=Hello%20World&description=My%20awesome%20content&theme=dark&templa
 			</div>
 			
 			<div class="api-section">
-				<h3>📖 API Examples</h3>
+				<h3>� API Keys</h3>
+				<p>Generate and manage API keys for programmatic access to Edge-OG:</p>
+				
+				<div class="api-key-form">
+					<h4>Generate New API Key</h4>
+					<form id="apiKeyForm" style="margin: 20px 0;">
+						<div style="margin-bottom: 15px;">
+							<label for="keyName" style="display: block; margin-bottom: 5px; font-weight: 600;">Key Name:</label>
+							<input 
+								type="text" 
+								id="keyName" 
+								name="name" 
+								placeholder="e.g., Production App, Development, CI/CD"
+								required
+								maxlength="100"
+								style="width: 100%; max-width: 400px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+							>
+						</div>
+						<button 
+							type="submit" 
+							class="btn"
+							style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: 600;"
+						>
+							Generate API Key
+						</button>
+					</form>
+					
+					<div id="apiKeyResult" style="display: none; margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745;">
+						<h4 style="color: #155724; margin-top: 0;">✅ API Key Generated Successfully</h4>
+						<p style="color: #155724; font-weight: 600;">⚠️ Store this key securely. It will not be shown again.</p>
+						<div style="background: white; padding: 15px; border-radius: 4px; font-family: monospace; word-break: break-all; font-size: 14px; margin: 10px 0;">
+							<span id="generatedKey"></span>
+						</div>
+						<button 
+							onclick="copyToClipboard()" 
+							style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 10px;"
+						>
+							Copy Key
+						</button>
+						<button 
+							onclick="document.getElementById('apiKeyResult').style.display='none';" 
+							style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;"
+						>
+							Hide
+						</button>
+					</div>
+				</div>
+			</div>
+			
+			<div class="api-section">
+				<h3>�📖 API Examples</h3>
 				
 				<h4>Blog Post</h4>
 				<div class="api-example">
-/og?title=Building%20Modern%20APIs&description=Learn%20best%20practices%20for%20API%20development&template=blog&author=John%20Doe&theme=blue
+			<div class="api-section">
+				<h3>📖 API Examples</h3>
+				
+				<h4>Using Your API Key</h4>
+				<div class="api-example">
+curl -H "Authorization: Bearer YOUR_API_KEY" 
+  "${baseUrl}/og?title=Hello%20World&theme=dark"
+				</div>
+				
+				<h4>JavaScript (Node.js/Browser)</h4>
+				<div class="api-example">
+const response = await fetch('${baseUrl}/og?title=Hello%20World&theme=dark', {
+  headers: {
+    'Authorization': 'Bearer YOUR_API_KEY'
+  }
+});
+const imageBlob = await response.blob();
+				</div>
+				
+				<h4>Python</h4>
+				<div class="api-example">
+import requests
+
+headers = {'Authorization': 'Bearer YOUR_API_KEY'}
+response = requests.get('${baseUrl}/og?title=Hello%20World&theme=dark', 
+                       headers=headers)
+with open('og-image.png', 'wb') as f:
+    f.write(response.content)
+				</div>
+				
+				<hr style="margin: 30px 0; border: 1px solid #e0e0e0;">
+				
+				<h4>Template Examples</h4>
+				
+				<h4>Blog Post</h4>
+				<div class="api-example">
+${baseUrl}/og?title=Building%20Modern%20APIs&description=Learn%20best%20practices&template=blog&author=John%20Doe&theme=blue
+				</div>
+				
+				<h4>Product Launch</h4>
+				<div class="api-example">
+${baseUrl}/og?title=New%20Product%20Launch&description=Revolutionary%20software&template=product&price=$99&theme=green
+				</div>
+				
+				<h4>Event</h4>
+				<div class="api-example">
+${baseUrl}/og?title=Tech%20Conference%202025&description=Join%20industry%20leaders&template=event&date=March%2015&location=San%20Francisco&theme=purple
+				</div>
+			</div>
 				</div>
 				
 				<h4>Product Launch</h4>
@@ -1132,6 +1454,86 @@ GET /og?title=Hello%20World&description=My%20awesome%20content&theme=dark&templa
 			</div>
 		</div>
 	</div>
+	
+	<script>
+		let generatedApiKey = '';
+		
+		document.getElementById('apiKeyForm').addEventListener('submit', async function(e) {
+			e.preventDefault();
+			
+			const keyName = document.getElementById('keyName').value.trim();
+			const submitButton = e.target.querySelector('button[type="submit"]');
+			const originalText = submitButton.textContent;
+			
+			if (!keyName) {
+				alert('Please enter a name for your API key');
+				return;
+			}
+			
+			// Show loading state
+			submitButton.textContent = 'Generating...';
+			submitButton.disabled = true;
+			
+			try {
+				const response = await fetch('/dashboard/api-keys', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({ name: keyName })
+				});
+				
+				const data = await response.json();
+				
+				if (response.ok) {
+					// Show the generated API key
+					generatedApiKey = data.api_key.key;
+					document.getElementById('generatedKey').textContent = generatedApiKey;
+					document.getElementById('apiKeyResult').style.display = 'block';
+					
+					// Clear the form
+					document.getElementById('keyName').value = '';
+					
+					// Scroll to result
+					document.getElementById('apiKeyResult').scrollIntoView({ behavior: 'smooth' });
+				} else {
+					alert('Error: ' + (data.error || 'Failed to generate API key'));
+				}
+			} catch (error) {
+				console.error('Error generating API key:', error);
+				alert('Failed to generate API key. Please try again.');
+			} finally {
+				// Reset button state
+				submitButton.textContent = originalText;
+				submitButton.disabled = false;
+			}
+		});
+		
+		function copyToClipboard() {
+			if (generatedApiKey) {
+				navigator.clipboard.writeText(generatedApiKey).then(function() {
+					const button = event.target;
+					const originalText = button.textContent;
+					button.textContent = 'Copied!';
+					button.style.background = '#28a745';
+					
+					setTimeout(function() {
+						button.textContent = originalText;
+						button.style.background = '#28a745';
+					}, 2000);
+				}).catch(function(err) {
+					console.error('Failed to copy to clipboard:', err);
+					// Fallback - select the text
+					const keyElement = document.getElementById('generatedKey');
+					const range = document.createRange();
+					range.selectNode(keyElement);
+					window.getSelection().removeAllRanges();
+					window.getSelection().addRange(range);
+					alert('API key selected. Press Ctrl+C (or Cmd+C on Mac) to copy.');
+				});
+			}
+		}
+	</script>
 </body>
 </html>`;
 }
