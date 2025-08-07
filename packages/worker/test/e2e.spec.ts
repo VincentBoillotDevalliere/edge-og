@@ -195,10 +195,11 @@ describe('Edge-OG E2E Tests', () => {
 			const accountStore = new Map<string, string>();
 			
 			const testEnv = {
-				...env,
-				RESEND_API_KEY: 'resend_test_key_placeholder', // Force development mode
+				...env, // Base environment first
+				// Override specific properties for testing
 				JWT_SECRET: 'shared-e2e-jwt-secret-at-least-32-characters-long-for-security',
 				EMAIL_PEPPER: 'e2e-test-email-pepper-16-chars',
+				RESEND_API_KEY: 'resend_test_key_placeholder', // Force development mode
 				MAILCHANNELS_API_TOKEN: 'e2e-test-mailchannels-token',
 				BASE_URL: 'https://e2e-test.edge-og.com',
 				ACCOUNTS: {
@@ -263,7 +264,7 @@ describe('Edge-OG E2E Tests', () => {
 				expect(actualAccountId).toBeDefined();
 				expect(actualAccountId).not.toBeNull();
 
-				// Generate callback token with the actual account ID
+				// Step 3: Use magic link callback with the actual account ID
 				const { generateMagicLinkToken } = await import('../src/utils/auth');
 				const callbackToken = await generateMagicLinkToken(actualAccountId!, emailHash, testEnv.JWT_SECRET);
 
@@ -282,10 +283,9 @@ describe('Edge-OG E2E Tests', () => {
 				expect(setCookieHeader).toBeDefined();
 				expect(setCookieHeader).toContain('edge_og_session=');
 				
-				// Step 3: Access dashboard with session cookie  
-				const sessionToken = setCookieHeader?.match(/edge_og_session=([^;]+)/)?.[1];
-				expect(sessionToken).toBeDefined();
-				expect(sessionToken).not.toBeNull();
+				// Step 4: Access dashboard with session cookie  
+				const sessionToken = setCookieHeader?.match(/edge_og_session=([^;]+)/)?.[1] || '';
+				expect(sessionToken).toBeTruthy();
 
 				const dashboardRequest = new IncomingRequest('https://e2e-test.edge-og.com/dashboard', {
 					method: 'GET',
@@ -298,6 +298,7 @@ describe('Edge-OG E2E Tests', () => {
 				const dashboardResponse = await worker.fetch(dashboardRequest, testEnv, dashboardCtx);
 				await waitOnExecutionContext(dashboardCtx);
 
+				// Dashboard should return HTML content, not redirect 
 				expect(dashboardResponse.status).toBe(200);
 				expect(dashboardResponse.headers.get('Content-Type')).toBe('text/html; charset=utf-8');
 				
@@ -897,6 +898,7 @@ describe('Edge-OG E2E Tests', () => {
 				const dashboardResponse = await worker.fetch(dashboardRequest, testEnv, dashboardCtx);
 				await waitOnExecutionContext(dashboardCtx);
 				
+				// Dashboard should return HTML content successfully
 				expect(dashboardResponse.status).toBe(200);
 				const dashboardHtml = await dashboardResponse.text();
 				expect(dashboardHtml).toContain('Dashboard');

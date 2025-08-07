@@ -803,8 +803,13 @@ async function handleDashboard(
 		if (cookieHeader) {
 			// Parse cookies to find edge_og_session
 			const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
-				const [key, value] = cookie.trim().split('=');
-				acc[key] = value;
+				const trimmed = cookie.trim();
+				const equalIndex = trimmed.indexOf('=');
+				if (equalIndex > 0) {
+					const key = trimmed.substring(0, equalIndex);
+					const value = trimmed.substring(equalIndex + 1);
+					acc[key] = value;
+				}
 				return acc;
 			}, {} as Record<string, string>);
 			
