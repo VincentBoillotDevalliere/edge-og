@@ -543,8 +543,8 @@ describe('Edge-OG E2E Tests', () => {
 			it('handles method not allowed errors consistently', async () => {
 				const methodTests = [
 					{ url: 'https://edge-og.example.com/og', method: 'POST', allowedMethods: 'GET' },
-					{ url: 'https://edge-og.example.com/', method: 'POST', expectedStatus: 404 }, // Routes to 404
-					{ url: 'https://edge-og.example.com/auth/callback', method: 'POST', expectedStatus: 404 }, // Routes to 404
+					{ url: 'https://edge-og.example.com/', method: 'POST', allowedMethods: 'GET' },
+					{ url: 'https://edge-og.example.com/auth/callback', method: 'POST', allowedMethods: 'GET' },
 				];
 				
 				for (const test of methodTests) {
@@ -553,14 +553,10 @@ describe('Edge-OG E2E Tests', () => {
 					const response = await worker.fetch(request, env, ctx);
 					await waitOnExecutionContext(ctx);
 					
-					if (test.allowedMethods) {
-						expect(response.status).toBe(405);
-						expect(response.headers.get('Allow')).toBe(test.allowedMethods);
-						const data = await response.json() as any;
-						expect(data.error).toContain('Method not allowed');
-					} else {
-						expect(response.status).toBe(test.expectedStatus || 404);
-					}
+					expect(response.status).toBe(405);
+					expect(response.headers.get('Allow')).toBe(test.allowedMethods);
+					const data = await response.json() as any;
+					expect(data.error).toContain('Method not allowed');
 				}
 			});
 		});

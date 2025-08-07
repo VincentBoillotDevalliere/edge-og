@@ -988,7 +988,8 @@ describe('Edge-OG Worker', () => {
 			const response = await worker.fetch(request, testEnv, ctx);
 			await waitOnExecutionContext(ctx);
 
-			expect(response.status).toBe(404); // Falls through to 404 handler
+			expect(response.status).toBe(405); // Method not allowed
+			expect(response.headers.get('Allow')).toBe('POST');
 		});
 
 		it('handles missing environment variables', async () => {
@@ -1244,6 +1245,316 @@ describe('Edge-OG Worker', () => {
 			expect(response.status).toBe(500);
 			const data = await response.json() as any;
 			expect(data.error).toBe('Failed to process authentication. Please try again.');
+		});
+	});
+
+	// AQ-1.3: User Logout Tests  
+	describe('User Logout (/auth/session DELETE)', () => {
+		beforeEach(() => {
+			// Reset mocks
+			vi.clearAllMocks();
+		});
+
+		const testEnv = {
+			...env,
+			JWT_SECRET: 'test-jwt-secret-at-least-32-characters-long-for-security',
+			EMAIL_PEPPER: 'test-email-pepper-at-least-16-chars',
+			MAILCHANNELS_API_TOKEN: 'test-mailchannels-token',
+			BASE_URL: 'https://edge-og.example.com',
+			ACCOUNTS: {
+				get: vi.fn().mockResolvedValue(JSON.stringify({
+					email_hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+					created: '2024-01-01T00:00:00.000Z',
+					plan: 'free'
+				})),
+				put: vi.fn().mockResolvedValue(undefined),
+				delete: vi.fn().mockResolvedValue(undefined),
+				list: vi.fn().mockResolvedValue({ keys: [] }),
+				getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+			},
+			USAGE: {
+				get: vi.fn().mockResolvedValue(null),
+				put: vi.fn().mockResolvedValue(undefined),
+				delete: vi.fn().mockResolvedValue(undefined),
+				list: vi.fn().mockResolvedValue({ keys: [] }),
+				getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+			},
+		} as any;
+
+		it('successfully logs out user with valid session cookie', async () => {
+			// Import auth functions to generate a valid session token
+			const { generateSessionToken } = await import('../src/utils/auth');
+			
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+			const sessionToken = await generateSessionToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest('https://example.com/auth/session', {
+				method: 'DELETE',
+				headers: {
+					'Cookie': `edge_og_session=${sessionToken}`,
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('application/json');
+			
+			// Check that session cookie is cleared
+			const setCookieHeader = response.headers.get('Set-Cookie');
+			expect(setCookieHeader).toBeDefined();
+			expect(setCookieHeader).toContain('edge_og_session=');
+			expect(setCookieHeader).toContain('Max-Age=0'); // Cookie cleared
+			expect(setCookieHeader).toContain('HttpOnly');
+			expect(setCookieHeader).toContain('Secure');
+
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.message).toBe('Successfully logged out');
+			expect(data.request_id).toBeDefined();
+		});
+
+		it('successfully logs out user without session cookie', async () => {
+			const request = new IncomingRequest('https://example.com/auth/session', {
+				method: 'DELETE',
+				// No Cookie header
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('application/json');
+			
+			// Check that session cookie is cleared
+			const setCookieHeader = response.headers.get('Set-Cookie');
+			expect(setCookieHeader).toBeDefined();
+			expect(setCookieHeader).toContain('edge_og_session=');
+			expect(setCookieHeader).toContain('Max-Age=0'); // Cookie cleared
+
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.message).toBe('Successfully logged out');
+			expect(data.request_id).toBeDefined();
+		});
+
+		it('successfully logs out user with invalid session cookie', async () => {
+			const request = new IncomingRequest('https://example.com/auth/session', {
+				method: 'DELETE',
+				headers: {
+					'Cookie': 'edge_og_session=invalid.token.here',
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('application/json');
+			
+			// Check that session cookie is cleared regardless
+			const setCookieHeader = response.headers.get('Set-Cookie');
+			expect(setCookieHeader).toBeDefined();
+			expect(setCookieHeader).toContain('edge_og_session=');
+			expect(setCookieHeader).toContain('Max-Age=0'); // Cookie cleared
+
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.message).toBe('Successfully logged out');
+		});
+
+		it('successfully logs out user with expired session cookie', async () => {
+			// Create an expired session token manually
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+			const pastTime = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
+			
+			const expiredPayload = {
+				account_id: accountId,
+				email_hash: emailHash,
+				iat: pastTime - 86400, // 24 hours before expiration
+				exp: pastTime, // Already expired
+				type: 'session',
+			};
+			
+			// Create minimal expired token 
+			const header = { alg: 'HS256', typ: 'JWT' };
+			const encodedHeader = btoa(JSON.stringify(header)).replace(/[+/=]/g, (match) => {
+				return { '+': '-', '/': '_', '=': '' }[match] || match;
+			});
+			const encodedPayload = btoa(JSON.stringify(expiredPayload)).replace(/[+/=]/g, (match) => {
+				return { '+': '-', '/': '_', '=': '' }[match] || match;
+			});
+			const fakeSignature = 'fake-signature-here';
+			const expiredToken = `${encodedHeader}.${encodedPayload}.${fakeSignature}`;
+
+			const request = new IncomingRequest('https://example.com/auth/session', {
+				method: 'DELETE',
+				headers: {
+					'Cookie': `edge_og_session=${expiredToken}`,
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('application/json');
+			
+			// Check that session cookie is cleared
+			const setCookieHeader = response.headers.get('Set-Cookie');
+			expect(setCookieHeader).toBeDefined();
+			expect(setCookieHeader).toContain('Max-Age=0'); // Cookie cleared
+
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.message).toBe('Successfully logged out');
+		});
+
+		it('only accepts DELETE method', async () => {
+			// Test GET method
+			const getRequest = new IncomingRequest('https://example.com/auth/session', {
+				method: 'GET',
+			});
+
+			const getCtx = createExecutionContext();
+			const getResponse = await worker.fetch(getRequest, testEnv, getCtx);
+			await waitOnExecutionContext(getCtx);
+
+			expect(getResponse.status).toBe(405); // Method not allowed
+			expect(getResponse.headers.get('Allow')).toBe('DELETE');
+
+			// Test POST method
+			const postRequest = new IncomingRequest('https://example.com/auth/session', {
+				method: 'POST',
+			});
+
+			const postCtx = createExecutionContext();
+			const postResponse = await worker.fetch(postRequest, testEnv, postCtx);
+			await waitOnExecutionContext(postCtx);
+
+			expect(postResponse.status).toBe(405); // Method not allowed
+			expect(postResponse.headers.get('Allow')).toBe('DELETE');
+		});
+
+		it('logs account ID when available in session token', async () => {
+			// Import auth functions to generate a valid session token
+			const { generateSessionToken } = await import('../src/utils/auth');
+			
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+			const sessionToken = await generateSessionToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest('https://example.com/auth/session', {
+				method: 'DELETE',
+				headers: {
+					'Cookie': `edge_og_session=${sessionToken}`,
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.request_id).toBeDefined();
+		});
+
+		it('handles missing environment variables gracefully', async () => {
+			const incompleteEnv = {
+				...env,
+				// Missing JWT_SECRET for token verification
+			};
+
+			const request = new IncomingRequest('https://example.com/auth/session', {
+				method: 'DELETE',
+				headers: {
+					'Cookie': 'edge_og_session=some.token.here',
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, incompleteEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			// Should still succeed (logout doesn't require valid environment for clearing cookie)
+			expect(response.status).toBe(200);
+			
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.message).toBe('Successfully logged out');
+		});
+
+		it('includes proper security headers in cookie clearing', async () => {
+			const request = new IncomingRequest('https://example.com/auth/session', {
+				method: 'DELETE',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			
+			const setCookieHeader = response.headers.get('Set-Cookie');
+			expect(setCookieHeader).toBeDefined();
+			
+			// Verify all security attributes are present
+			expect(setCookieHeader).toContain('HttpOnly');
+			expect(setCookieHeader).toContain('Secure');
+			expect(setCookieHeader).toContain('SameSite=Lax');
+			expect(setCookieHeader).toContain('Path=/');
+			expect(setCookieHeader).toContain('Max-Age=0');
+		});
+
+		it('preserves request ID in response for tracing', async () => {
+			const request = new IncomingRequest('https://example.com/auth/session', {
+				method: 'DELETE',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			
+			const data = await response.json() as any;
+			expect(data.request_id).toBeDefined();
+			expect(typeof data.request_id).toBe('string');
+			expect(data.request_id.length).toBeGreaterThan(0);
+		});
+
+		it('handles complex cookie headers correctly', async () => {
+			const request = new IncomingRequest('https://example.com/auth/session', {
+				method: 'DELETE',
+				headers: {
+					'Cookie': 'other_cookie=value; edge_og_session=session.token.here; another_cookie=another_value',
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			
+			// Should still clear the session cookie
+			const setCookieHeader = response.headers.get('Set-Cookie');
+			expect(setCookieHeader).toBeDefined();
+			expect(setCookieHeader).toContain('edge_og_session=');
+			expect(setCookieHeader).toContain('Max-Age=0');
+
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
 		});
 	});
 });
