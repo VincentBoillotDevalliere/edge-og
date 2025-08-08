@@ -492,7 +492,8 @@ export async function checkRateLimit(
 export async function sendMagicLinkEmail(
 	email: string,
 	magicLinkToken: string,
-	env: Env
+	env: Env,
+	requestId?: string
 ): Promise<void> {
 	// Determine the correct base URL for the current environment
 	let baseUrl = env.BASE_URL;
@@ -647,34 +648,35 @@ export async function sendMagicLinkEmail(
 			email_domain: email.split('@')[1],
 			error: error instanceof Error ? error.message : 'Unknown error',
 		});
-		throw new WorkerError('Failed to send magic link email', 500);
+		throw new WorkerError('Failed to process magic link request', 500, requestId);
 	}
 }
 
 /**
  * Validate environment configuration for authentication
  */
-export function validateAuthEnvironment(env: Env): void {
+export function validateAuthEnvironment(env: Env, requestId?: string): void {
 	const requiredVars = ['JWT_SECRET', 'EMAIL_PEPPER'];
 	const missing = requiredVars.filter(varName => !env[varName as keyof Env]);
 	
 	if (missing.length > 0) {
 		throw new WorkerError(
 			`Missing required environment variables for authentication: ${missing.join(', ')}`,
-			500
+			500,
+			requestId
 		);
 	}
 	
 	// Validate JWT secret strength
 	const jwtSecret = env.JWT_SECRET as string;
 	if (jwtSecret.length < 32) {
-		throw new WorkerError('JWT_SECRET must be at least 32 characters for security', 500);
+		throw new WorkerError('JWT_SECRET must be at least 32 characters for security', 500, requestId);
 	}
 	
 	// Validate email pepper
 	const emailPepper = env.EMAIL_PEPPER as string;
 	if (emailPepper.length < 16) {
-		throw new WorkerError('EMAIL_PEPPER must be at least 16 characters for security', 500);
+		throw new WorkerError('EMAIL_PEPPER must be at least 16 characters for security', 500, requestId);
 	}
 }
 
@@ -792,7 +794,7 @@ export async function storeAPIKey(
 			key_id: kid,
 			error: error instanceof Error ? error.message : 'Unknown error',
 		});
-		throw new WorkerError('Failed to store API key', 500);
+		throw new WorkerError('Failed to generate API key. Please try again.', 500);
 	}
 }
 
