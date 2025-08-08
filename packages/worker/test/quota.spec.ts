@@ -11,6 +11,7 @@ vi.hoisted(() => {
 
 import worker from '../src/index';
 import { generateAPIKey, storeAPIKey } from '../src/utils/auth';
+import { getCurrentYYYYMM } from '../src/utils/quota';
 
 const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 
@@ -105,5 +106,179 @@ describe('AQ-3.1: Free tier quota 1 image/month', () => {
     expect(data.error).toContain('Monthly quota exceeded');
     expect(data.limit).toBe(1);
     expect(data.usage).toBeGreaterThan(1);
+  });
+});
+
+describe('AQ-3.3: Paid plan quotas (limits by plan)', () => {
+  beforeAll(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Not Found', { status: 404 })));
+  });
+  afterAll(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('starter plan: allows up to limit and blocks after', async () => {
+    const accountId = 'acc_starter_1';
+
+    // In-memory KV stubs
+    const apiKeysStore = new Map<string, string>();
+    const usageStore = new Map<string, string>();
+    const accountsStore = new Map<string, string>();
+
+    const testEnv = {
+      ...env,
+      ENVIRONMENT: 'production',
+      JWT_SECRET: 'quota-test-secret-at-least-32-characters-xyz-123',
+      API_KEYS: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = apiKeysStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          apiKeysStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+      USAGE: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = usageStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          usageStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+      ACCOUNTS: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = accountsStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          accountsStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+    } as any;
+
+    // Create starter plan account record
+    await (testEnv.ACCOUNTS as any).put(`account:${accountId}`, JSON.stringify({ plan: 'starter' }));
+
+    // Prepare an API key for that account
+    const { kid, fullKey, hash } = await generateAPIKey(accountId, 'Starter Quota Key', testEnv);
+    await storeAPIKey(kid, accountId, hash, 'Starter Quota Key', testEnv);
+
+    // Pre-seed usage to one below limit (starter=1000)
+    const key = `usage:${kid}:${getCurrentYYYYMM()}`;
+    usageStore.set(key, JSON.stringify({ count: 999 }));
+
+    // First request should hit exactly the limit (1000) and be allowed
+    const req1 = new IncomingRequest('https://example.com/og?title=Starter1', {
+      headers: { Authorization: `Bearer ${fullKey}` },
+    });
+    const ctx1 = createExecutionContext();
+    const res1 = await worker.fetch(req1, testEnv, ctx1);
+    await waitOnExecutionContext(ctx1);
+    expect(res1.status).toBe(200);
+
+    // Second request should exceed (count=1001) and return 429
+    const req2 = new IncomingRequest('https://example.com/og?title=Starter2', {
+      headers: { Authorization: `Bearer ${fullKey}` },
+    });
+    const ctx2 = createExecutionContext();
+    const res2 = await worker.fetch(req2, testEnv, ctx2);
+    await waitOnExecutionContext(ctx2);
+    expect(res2.status).toBe(429);
+    const data2 = await res2.json() as any;
+    expect(data2.limit).toBe(1000);
+    expect(data2.usage).toBeGreaterThan(1000);
+  });
+
+  it('pro plan: blocks when usage already at limit', async () => {
+    const accountId = 'acc_pro_1';
+
+    // In-memory KV stubs
+    const apiKeysStore = new Map<string, string>();
+    const usageStore = new Map<string, string>();
+    const accountsStore = new Map<string, string>();
+
+    const testEnv = {
+      ...env,
+      ENVIRONMENT: 'production',
+      JWT_SECRET: 'quota-test-secret-at-least-32-characters-xyz-123',
+      API_KEYS: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = apiKeysStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          apiKeysStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+      USAGE: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = usageStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          usageStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+      ACCOUNTS: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = accountsStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          accountsStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+    } as any;
+
+    // Create pro plan account
+    await (testEnv.ACCOUNTS as any).put(`account:${accountId}`, JSON.stringify({ plan: 'pro' }));
+
+    // Prepare key
+    const { kid, fullKey, hash } = await generateAPIKey(accountId, 'Pro Quota Key', testEnv);
+    await storeAPIKey(kid, accountId, hash, 'Pro Quota Key', testEnv);
+
+    // Seed usage to the plan limit (pro=10000)
+    const key = `usage:${kid}:${getCurrentYYYYMM()}`;
+    usageStore.set(key, JSON.stringify({ count: 10000 }));
+
+    // Next request should exceed and 429
+    const req = new IncomingRequest('https://example.com/og?title=Pro', {
+      headers: { Authorization: `Bearer ${fullKey}` },
+    });
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(req, testEnv, ctx);
+    await waitOnExecutionContext(ctx);
+
+    expect(res.status).toBe(429);
+    const data = await res.json() as any;
+    expect(data.limit).toBe(10000);
+    expect(data.usage).toBeGreaterThan(10000);
   });
 });
