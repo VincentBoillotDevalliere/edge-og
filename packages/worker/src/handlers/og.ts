@@ -4,6 +4,7 @@ import { log } from '../utils/logger';
 import { TemplateType } from '../templates';
 import { renderOpenGraphImage } from '../render';
 import { verifyAPIKey } from '../utils/auth';
+import { getMonthlyUsage, incrementMonthlyUsage } from '../kv/usage';
 import { 
 	getCacheStatus, 
 	generateETag, 
@@ -29,18 +30,32 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 	const startRender = performance.now();
 
 	// AQ-2.3: Require Authorization: Bearer API key
-	// Production default: enforce; allow opt-out in development unless explicitly required
-	const requireAuth = (env.ENVIRONMENT === 'production') || (env as any).REQUIRE_AUTH === 'true';
+	// In production: always require auth. In non-production: require only when REQUIRE_AUTH === 'true'.
+	const isProd = (env as any).ENVIRONMENT === 'production';
+	const requireAuth = isProd || (env as any).REQUIRE_AUTH === 'true';
+	let verifiedKey: Awaited<ReturnType<typeof verifyAPIKey>> = null;
 	if (requireAuth) {
 		const authHeader = request.headers.get('Authorization') || '';
-		const accountId = await verifyAPIKey(authHeader, env);
-		if (!accountId) {
+		verifiedKey = await verifyAPIKey(authHeader, env);
+		if (!verifiedKey) {
 			// Log auth failure minimally (no secrets)
 			log({ event: 'auth_failed', status: 401, request_id: requestId });
 			throw new WorkerError('Unauthorized', 401, requestId);
 		}
-		// Optionally attach accountId to context for future quota checks (AQ-3.x)
-		// (not persisted on context type to keep change minimal)
+		// AQ-3.1/AQ-3.2: Enforce monthly quota per API key (kid)
+		const { accountId, kid } = verifiedKey;
+		// Determine plan limit; for now, free tier default 1 req/month as per AQ-3.1
+		const plan = 'free'; // TODO(ai): read from ACCOUNTS.plan in AQ-3.3
+		const limits: Record<string, number> = { free: 1, starter: 2000000, pro: 5000000 };
+		const limit = limits[plan] ?? 1;
+		const current = await getMonthlyUsage(kid, env);
+		if (current >= limit) {
+			log({ event: 'quota_exceeded', kid, account_id: accountId, current, limit, request_id: requestId });
+			return new Response(JSON.stringify({ error: 'Too many requests: monthly quota exceeded', request_id: requestId }), {
+				status: 429,
+				headers: { 'Content-Type': 'application/json' }
+			});
+		}
 	}
 
 	// EC-1: Get cache status for monitoring
@@ -160,10 +175,17 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 	}
 
 	// Return with EC-1 compliant caching headers and EC-2 invalidation support
-	return new Response(responseBody, {
+	const response = new Response(responseBody, {
 		status: 200,
 		headers,
 	});
+
+	// AQ-3.2: increment monthly usage for authenticated requests
+	if (requireAuth && verifiedKey) {
+		ctx.waitUntil(incrementMonthlyUsage(verifiedKey.kid, env));
+	}
+
+	return response;
 }
 
 /**

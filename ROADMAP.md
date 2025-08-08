@@ -72,7 +72,7 @@
 
 | ID | User Story | Critères d’acceptation | Priorité |
 |----|-----------|------------------------|----------|
-| **AQ‑3.1** | Free tier : 1 000 images/mois max | • Incrément atomique usage.<br>• Dès dépassement : HTTP 429 JSON. | **Must** |
+| **AQ‑3.1** | Free tier : 1 images/mois max | • Incrément atomique usage.<br>• Dès dépassement : HTTP 429 JSON. | **Must** |
 | **AQ‑3.2** | Le compteur repart à 0 chaque 1ᵉʳ du mois UTC | • Clé `usage:{kid}:{YYYYMM}` nouvel objet mensuel. | **Must** |
 | **AQ‑3.3** | Les plans payants obtiennent quotas supérieurs | • Limite lue dans `ACCOUNTS.plan` → table limites. | **Should** |
 | **AQ‑3.4** | L’admin réinitialise un quota | • Doc CLI : `wrangler kv:key put usage:{kid}:{YYYYMM} 0`. | **Could** |
