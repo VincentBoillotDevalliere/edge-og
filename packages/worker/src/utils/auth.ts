@@ -905,3 +905,162 @@ function constantTimeCompare(a: string, b: string): boolean {
 	
 	return result === 0;
 }
+
+/**
+ * API key list item for returning to client
+ * Only includes safe data, never the actual key hash
+ */
+export interface APIKeyListItem {
+	id: string; // Key ID (kid)
+	name: string; // User-friendly name
+	prefix: string; // Public prefix (eog_xxx)
+	created: string; // ISO timestamp
+	last_used?: string; // ISO timestamp
+	revoked: boolean;
+}
+
+/**
+ * API key metadata structure for KV storage
+ */
+interface APIKeyMetadata {
+	account: string;
+	created_at: number;
+	name: string;
+}
+
+/**
+ * List all API keys for a specific account
+ * Implements AQ-2.2: GET shows name, prefix, dates
+ * 
+ * @param accountId - Account ID to list keys for
+ * @param env - Environment bindings
+ * @returns Array of API key information (without secrets)
+ */
+export async function listAPIKeys(accountId: string, env: Env): Promise<APIKeyListItem[]> {
+	try {
+		// List all keys with metadata containing the account
+		const result = await env.API_KEYS.list({
+			prefix: 'key:',
+		});
+		
+		const apiKeys: APIKeyListItem[] = [];
+		
+		// Process each key and filter by account
+		for (const key of result.keys) {
+			const metadata = key.metadata as APIKeyMetadata | undefined;
+			if (metadata && metadata.account === accountId) {
+				// Get the full key data to check current state
+				const keyData = await env.API_KEYS.get(key.name, 'json') as APIKeyData | null;
+				
+				if (keyData) {
+					// Extract kid from key name (remove 'key:' prefix)
+					const kid = key.name.substring(4);
+					
+					// Generate the public prefix
+					const prefix = `eog_${kid}`;
+					
+					apiKeys.push({
+						id: kid,
+						name: keyData.name,
+						prefix: prefix,
+						created: keyData.created,
+						last_used: keyData.last_used,
+						revoked: keyData.revoked,
+					});
+				}
+			}
+		}
+		
+		// Sort by creation date (newest first)
+		apiKeys.sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
+		
+		log({
+			event: 'api_keys_listed',
+			account_id: accountId,
+			key_count: apiKeys.length,
+		});
+		
+		return apiKeys;
+	} catch (error) {
+		log({
+			event: 'api_keys_list_failed',
+			account_id: accountId,
+			error: error instanceof Error ? error.message : 'Unknown error',
+		});
+		throw new WorkerError('Failed to list API keys', 500);
+	}
+}
+
+/**
+ * Revoke an API key by setting revoked=true
+ * Implements AQ-2.2: DELETE sets `revoked=true`
+ * 
+ * @param kid - Key ID to revoke
+ * @param accountId - Account ID that owns the key (for verification)
+ * @param env - Environment bindings
+ * @returns True if key was revoked, false if not found or not owned by account
+ */
+export async function revokeAPIKey(kid: string, accountId: string, env: Env): Promise<boolean> {
+	try {
+		const key = `key:${kid}`;
+		
+		// Get current key data
+		const keyData = await env.API_KEYS.get(key, 'json') as APIKeyData | null;
+		
+		if (!keyData) {
+			return false; // Key not found
+		}
+		
+		// Verify the key belongs to the requesting account
+		if (keyData.account !== accountId) {
+			log({
+				event: 'api_key_revoke_unauthorized',
+				key_id: kid,
+				account_id: accountId,
+				key_owner: keyData.account,
+			});
+			return false; // Not authorized to revoke this key
+		}
+		
+		// If already revoked, return true (idempotent operation)
+		if (keyData.revoked) {
+			log({
+				event: 'api_key_already_revoked',
+				key_id: kid,
+				account_id: accountId,
+			});
+			return true;
+		}
+		
+		// Set revoked flag and update
+		keyData.revoked = true;
+		
+		// Keep the original metadata but update it
+		const existingMetadata = await env.API_KEYS.getWithMetadata(key);
+		
+		await env.API_KEYS.put(key, JSON.stringify(keyData), {
+			metadata: (existingMetadata.metadata as APIKeyMetadata) || {
+				account: accountId,
+				created_at: Date.now(),
+				name: keyData.name,
+			}
+		});
+		
+		log({
+			event: 'api_key_revoked',
+			key_id: kid,
+			account_id: accountId,
+			key_name: keyData.name,
+		});
+		
+		return true;
+	} catch (error) {
+		log({
+			event: 'api_key_revoke_failed',
+			key_id: kid,
+			account_id: accountId,
+			error: error instanceof Error ? error.message : 'Unknown error',
+		});
+		throw new WorkerError('Failed to revoke API key', 500);
+	}
+}

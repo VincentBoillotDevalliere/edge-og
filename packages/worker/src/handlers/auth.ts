@@ -345,3 +345,28 @@ async function parseEmailFromRequest(request: Request, requestId: string): Promi
 
 	return email;
 }
+
+/**
+ * Handle logout: clear session cookie and redirect to homepage
+ */
+export async function handleLogout(context: RequestContext): Promise<Response> {
+	const { url } = context;
+	const baseUrl = `${url.protocol}//${url.host}`;
+
+	const headers = new Headers();
+	headers.set('Location', `${baseUrl}/`);
+	// Expire the cookie immediately
+	headers.set(
+		'Set-Cookie',
+		[
+			'edge_og_session=deleted',
+			'HttpOnly',
+			'Secure',
+			'SameSite=Lax',
+			'Path=/',
+			'Max-Age=0'
+		].join('; ')
+	);
+
+	return new Response(null, { status: 302, headers });
+}

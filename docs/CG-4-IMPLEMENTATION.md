@@ -29,9 +29,9 @@ The CG-4 implementation adds support for loading custom fonts from external HTTP
    - Font name extraction from URL filenames
    - Fallback mechanism when URL parsing fails
 
-4. **User Interface** (`src/utils/homepage.ts`):
+4. **User Interface** (`src/pages/home.html`):
    - Added custom font URL input field to the homepage form
-   - Updated JavaScript to handle the new parameter
+   - Updated inline JavaScript to handle the new parameter
    - Example demonstrating CG-4 functionality
 
 ### Security Measures

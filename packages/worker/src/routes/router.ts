@@ -5,8 +5,11 @@ import { WorkerError } from '../utils/error';
 import {
 	handleMagicLinkRequest,
 	handleMagicLinkCallback,
+		handleLogout,
 	handleDashboard,
 	handleAPIKeyGeneration,
+	handleAPIKeyListing,
+	handleAPIKeyRevocation,
 	handleOGImageGeneration,
 	handleOGMethodNotAllowed,
 	handleHomepage,
@@ -43,6 +46,14 @@ export class Router {
 			return route.handler(context);
 		}
 
+		// Handle special cases
+		
+		// API key revocation with dynamic ID: DELETE /dashboard/api-keys/{keyId}
+		// Also forward malformed paths (e.g., missing keyId) to the handler so it can return 400 as per tests
+		if (method === 'DELETE' && pathname.startsWith('/dashboard/api-keys/')) {
+			return handleAPIKeyRevocation(context);
+		}
+
 		// Handle special case for OG endpoint - method not allowed
 		if (pathname === '/og' && method !== 'GET') {
 			return handleOGMethodNotAllowed(context);
@@ -62,9 +73,11 @@ export function createRouter(): Router {
 	// Authentication routes
 	router.addRoute('POST', '/auth/request-link', handleMagicLinkRequest);
 	router.addRoute('GET', '/auth/callback', handleMagicLinkCallback);
+	router.addRoute('GET', '/auth/logout', handleLogout);
 
 	// Dashboard routes
 	router.addRoute('GET', '/dashboard', handleDashboard);
+	router.addRoute('GET', '/dashboard/api-keys', handleAPIKeyListing);
 	router.addRoute('POST', '/dashboard/api-keys', handleAPIKeyGeneration);
 
 	// OG image generation route

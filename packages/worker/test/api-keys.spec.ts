@@ -506,4 +506,495 @@ describe('AQ-2.1: API Key Generation', () => {
 			expect(uniqueKeys.size).toBe(keys.length);
 		});
 	});
+
+	describe('GET /dashboard/api-keys (listing)', () => {
+		it('lists API keys for authenticated user', async () => {
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = await hashEmailWithPepper('test@example.com', testEnv.EMAIL_PEPPER);
+			
+			// Mock account existence
+			testEnv.ACCOUNTS.get.mockResolvedValue(JSON.stringify({
+				email_hash: emailHash,
+				created: new Date().toISOString(),
+				plan: 'free'
+			}));
+
+			// Mock KV list response with one key
+			const mockKid = 'abc123def456';
+			testEnv.API_KEYS.list.mockResolvedValue({
+				keys: [
+					{
+						name: `key:${mockKid}`,
+						metadata: {
+							account: accountId,
+							created_at: Date.now(),
+							name: 'Test Key',
+						}
+					}
+				]
+			});
+
+			// Mock key data retrieval
+			testEnv.API_KEYS.get.mockImplementation((key: string, type?: string) => {
+				if (key === `key:${mockKid}`) {
+					const rawData = JSON.stringify({
+						account: accountId,
+						hash: 'mocked-hash',
+						name: 'Test Key',
+						revoked: false,
+						created: '2024-01-01T00:00:00.000Z',
+						last_used: '2024-01-02T00:00:00.000Z'
+					});
+					
+					if (type === 'json') {
+						return Promise.resolve(JSON.parse(rawData));
+					} else {
+						return Promise.resolve(rawData);
+					}
+				}
+				return Promise.resolve(null);
+			});
+
+			// Generate valid session token
+			const sessionToken = await generateSessionToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest('https://example.com/dashboard/api-keys', {
+				method: 'GET',
+				headers: {
+					'Cookie': `edge_og_session=${sessionToken}`,
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.api_keys).toHaveLength(1);
+			expect(data.api_keys[0]).toEqual({
+				id: mockKid,
+				name: 'Test Key',
+				prefix: `eog_${mockKid}`,
+				created: '2024-01-01T00:00:00.000Z',
+				last_used: '2024-01-02T00:00:00.000Z',
+				revoked: false,
+			});
+		});
+
+		it('returns empty list when user has no API keys', async () => {
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = await hashEmailWithPepper('test@example.com', testEnv.EMAIL_PEPPER);
+			
+			// Mock account existence
+			testEnv.ACCOUNTS.get.mockResolvedValue(JSON.stringify({
+				email_hash: emailHash,
+				created: new Date().toISOString(),
+				plan: 'free'
+			}));
+
+			// Mock empty KV list response
+			testEnv.API_KEYS.list.mockResolvedValue({
+				keys: []
+			});
+
+			// Generate valid session token
+			const sessionToken = await generateSessionToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest('https://example.com/dashboard/api-keys', {
+				method: 'GET',
+				headers: {
+					'Cookie': `edge_og_session=${sessionToken}`,
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.api_keys).toHaveLength(0);
+		});
+
+		it('filters out keys from other accounts', async () => {
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const otherAccountId = '98765432-1234-4567-8901-123456789012';
+			const emailHash = await hashEmailWithPepper('test@example.com', testEnv.EMAIL_PEPPER);
+			
+			// Mock account existence
+			testEnv.ACCOUNTS.get.mockResolvedValue(JSON.stringify({
+				email_hash: emailHash,
+				created: new Date().toISOString(),
+				plan: 'free'
+			}));
+
+			// Mock KV list response with keys from different accounts
+			testEnv.API_KEYS.list.mockResolvedValue({
+				keys: [
+					{
+						name: 'key:mykey123',
+						metadata: {
+							account: accountId,
+							created_at: Date.now(),
+							name: 'My Key',
+						}
+					},
+					{
+						name: 'key:otherkey456',
+						metadata: {
+							account: otherAccountId,
+							created_at: Date.now(),
+							name: 'Other Key',
+						}
+					}
+				]
+			});
+
+			// Mock key data retrieval for my key only
+			testEnv.API_KEYS.get.mockImplementation((key: string, type?: string) => {
+				if (key === 'key:mykey123') {
+					const rawData = JSON.stringify({
+						account: accountId,
+						hash: 'my-hash',
+						name: 'My Key',
+						revoked: false,
+						created: '2024-01-01T00:00:00.000Z',
+					});
+					
+					if (type === 'json') {
+						return Promise.resolve(JSON.parse(rawData));
+					} else {
+						return Promise.resolve(rawData);
+					}
+				}
+				return Promise.resolve(null);
+			});
+
+			// Generate valid session token
+			const sessionToken = await generateSessionToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest('https://example.com/dashboard/api-keys', {
+				method: 'GET',
+				headers: {
+					'Cookie': `edge_og_session=${sessionToken}`,
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.api_keys).toHaveLength(1);
+			expect(data.api_keys[0].id).toBe('mykey123');
+			expect(data.api_keys[0].name).toBe('My Key');
+		});
+
+		it('rejects request without authentication', async () => {
+			const request = new IncomingRequest('https://example.com/dashboard/api-keys', {
+				method: 'GET',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(401);
+			
+			const data = await response.json() as any;
+			expect(data.error).toBe('Authentication required. Please log in first.');
+		});
+
+		it('rejects request with invalid session token', async () => {
+			const request = new IncomingRequest('https://example.com/dashboard/api-keys', {
+				method: 'GET',
+				headers: {
+					'Cookie': 'edge_og_session=invalid-token',
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(401);
+			
+			const data = await response.json() as any;
+			expect(data.error).toBe('Invalid or expired session. Please log in again.');
+		});
+	});
+
+	describe('DELETE /dashboard/api-keys/{keyId} (revocation)', () => {
+		it('revokes API key for authenticated user', async () => {
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = await hashEmailWithPepper('test@example.com', testEnv.EMAIL_PEPPER);
+			const keyId = 'abc123def456';
+			
+			// Mock account existence
+			testEnv.ACCOUNTS.get.mockResolvedValue(JSON.stringify({
+				email_hash: emailHash,
+				created: new Date().toISOString(),
+				plan: 'free'
+			}));
+
+			// Mock key data retrieval
+			testEnv.API_KEYS.get.mockImplementation((key: string, type?: string) => {
+				if (key === `key:${keyId}`) {
+					const keyData = {
+						account: accountId,
+						hash: 'mocked-hash',
+						name: 'Test Key',
+						revoked: false,
+						created: '2024-01-01T00:00:00.000Z'
+					};
+					if (type === 'json') {
+						return Promise.resolve(keyData);
+					}
+					return Promise.resolve(JSON.stringify(keyData));
+				}
+				return Promise.resolve(null);
+			});
+
+			// Mock getWithMetadata for preserving metadata
+			testEnv.API_KEYS.getWithMetadata.mockResolvedValue({
+				value: null,
+				metadata: {
+					account: accountId,
+					created_at: Date.now(),
+					name: 'Test Key',
+				}
+			});
+
+			// Mock KV put for storing revoked key data
+			testEnv.API_KEYS.put.mockResolvedValue();
+
+			// Generate valid session token
+			const sessionToken = await generateSessionToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest(`https://example.com/dashboard/api-keys/${keyId}`, {
+				method: 'DELETE',
+				headers: {
+					'Cookie': `edge_og_session=${sessionToken}`,
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.message).toBe('API key revoked successfully.');
+			expect(data.key_id).toBe(keyId);
+
+			// Verify the key was updated with revoked=true
+			expect(testEnv.API_KEYS.put).toHaveBeenCalledWith(
+				`key:${keyId}`,
+				expect.stringContaining('"revoked":true'),
+				expect.any(Object)
+			);
+		});
+
+		it('returns 404 for non-existent API key', async () => {
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = await hashEmailWithPepper('test@example.com', testEnv.EMAIL_PEPPER);
+			const keyId = 'nonexistent123';
+			
+			// Mock account existence
+			testEnv.ACCOUNTS.get.mockResolvedValue(JSON.stringify({
+				email_hash: emailHash,
+				created: new Date().toISOString(),
+				plan: 'free'
+			}));
+
+			// Mock key not found
+			testEnv.API_KEYS.get.mockResolvedValue(null);
+
+			// Generate valid session token
+			const sessionToken = await generateSessionToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest(`https://example.com/dashboard/api-keys/${keyId}`, {
+				method: 'DELETE',
+				headers: {
+					'Cookie': `edge_og_session=${sessionToken}`,
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(404);
+			
+			const data = await response.json() as any;
+			expect(data.error).toBe('API key not found or not authorized to revoke.');
+		});
+
+		it('returns 404 when trying to revoke key owned by different account', async () => {
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const otherAccountId = '98765432-1234-4567-8901-123456789012';
+			const emailHash = await hashEmailWithPepper('test@example.com', testEnv.EMAIL_PEPPER);
+			const keyId = 'abc123def456';
+			
+			// Mock account existence
+			testEnv.ACCOUNTS.get.mockResolvedValue(JSON.stringify({
+				email_hash: emailHash,
+				created: new Date().toISOString(),
+				plan: 'free'
+			}));
+
+			// Mock key owned by different account
+			testEnv.API_KEYS.get.mockResolvedValue(JSON.stringify({
+				account: otherAccountId, // Different account
+				hash: 'mocked-hash',
+				name: 'Other Account Key',
+				revoked: false,
+				created: '2024-01-01T00:00:00.000Z'
+			}));
+
+			// Generate valid session token
+			const sessionToken = await generateSessionToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest(`https://example.com/dashboard/api-keys/${keyId}`, {
+				method: 'DELETE',
+				headers: {
+					'Cookie': `edge_og_session=${sessionToken}`,
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(404);
+			
+			const data = await response.json() as any;
+			expect(data.error).toBe('API key not found or not authorized to revoke.');
+		});
+
+		it('is idempotent - returns success when revoking already revoked key', async () => {
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = await hashEmailWithPepper('test@example.com', testEnv.EMAIL_PEPPER);
+			const keyId = 'abc123def456';
+			
+			// Mock account existence
+			testEnv.ACCOUNTS.get.mockResolvedValue(JSON.stringify({
+				email_hash: emailHash,
+				created: new Date().toISOString(),
+				plan: 'free'
+			}));
+
+			// Mock already revoked key
+			testEnv.API_KEYS.get.mockImplementation((key: string, type?: string) => {
+				if (key === `key:${keyId}`) {
+					const keyData = {
+						account: accountId,
+						hash: 'mocked-hash',
+						name: 'Test Key',
+						revoked: true, // Already revoked
+						created: '2024-01-01T00:00:00.000Z'
+					};
+					if (type === 'json') {
+						return Promise.resolve(keyData);
+					}
+					return Promise.resolve(JSON.stringify(keyData));
+				}
+				return Promise.resolve(null);
+			});
+
+			// Generate valid session token
+			const sessionToken = await generateSessionToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest(`https://example.com/dashboard/api-keys/${keyId}`, {
+				method: 'DELETE',
+				headers: {
+					'Cookie': `edge_og_session=${sessionToken}`,
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(200);
+			
+			const data = await response.json() as any;
+			expect(data.success).toBe(true);
+			expect(data.message).toBe('API key revoked successfully.');
+		});
+
+		it('returns 400 when key ID is missing from URL', async () => {
+			const accountId = '12345678-1234-4567-8901-123456789012';
+			const emailHash = await hashEmailWithPepper('test@example.com', testEnv.EMAIL_PEPPER);
+			
+			// Mock account existence
+			testEnv.ACCOUNTS.get.mockResolvedValue(JSON.stringify({
+				email_hash: emailHash,
+				created: new Date().toISOString(),
+				plan: 'free'
+			}));
+
+			// Generate valid session token
+			const sessionToken = await generateSessionToken(accountId, emailHash, testEnv.JWT_SECRET);
+
+			const request = new IncomingRequest('https://example.com/dashboard/api-keys/api-keys', {
+				method: 'DELETE',
+				headers: {
+					'Cookie': `edge_og_session=${sessionToken}`,
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(400);
+			
+			const data = await response.json() as any;
+			expect(data.error).toBe('API key ID is required.');
+		});
+
+		it('rejects request without authentication', async () => {
+			const request = new IncomingRequest('https://example.com/dashboard/api-keys/some-key-id', {
+				method: 'DELETE',
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(401);
+			
+			const data = await response.json() as any;
+			expect(data.error).toBe('Authentication required. Please log in first.');
+		});
+
+		it('rejects request with invalid session token', async () => {
+			const request = new IncomingRequest('https://example.com/dashboard/api-keys/some-key-id', {
+				method: 'DELETE',
+				headers: {
+					'Cookie': 'edge_og_session=invalid-token',
+				},
+			});
+
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, testEnv, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(response.status).toBe(401);
+			
+			const data = await response.json() as any;
+			expect(data.error).toBe('Invalid or expired session. Please log in again.');
+		});
+	});
 });

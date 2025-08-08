@@ -7,6 +7,8 @@ import {
 	SessionPayload,
 	generateAPIKey,
 	storeAPIKey,
+	listAPIKeys,
+	revokeAPIKey
 } from '../utils/auth';
 
 /**
@@ -216,5 +218,169 @@ function validateKeyName(keyName: string, requestId: string): void {
 
 	if (keyName.length > 100) {
 		throw new WorkerError('API key name must be 100 characters or less', 400, requestId);
+	}
+}
+
+/**
+ * Handle API key listing for authenticated users
+ * Implements AQ-2.2: Je liste mes clés (GET shows name, prefix, dates)
+ */
+export async function handleAPIKeyListing(context: RequestContext): Promise<Response> {
+	const { request, env, requestId } = context;
+	
+	try {
+		// Validate environment configuration
+		validateAuthEnvironment(env, requestId);
+
+		// Check for session cookie - user must be authenticated
+		const sessionToken = extractSessionTokenFromCookies(request);
+
+		if (!sessionToken) {
+			log({
+				event: 'api_key_listing_no_session',
+				request_id: requestId,
+			});
+
+			return new Response(
+				JSON.stringify({
+					error: 'Authentication required. Please log in first.',
+					request_id: requestId,
+				}),
+				{
+					status: 401,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// Verify session token
+		const payload = await verifyJWTToken<SessionPayload>(sessionToken, env.JWT_SECRET as string);
+		if (!payload) {
+			log({
+				event: 'api_key_listing_invalid_session',
+				request_id: requestId,
+			});
+
+			return new Response(
+				JSON.stringify({
+					error: 'Invalid or expired session. Please log in again.',
+					request_id: requestId,
+				}),
+				{
+					status: 401,
+					headers: { 'Content-Type': 'application/json' },
+				}
+			);
+		}
+
+		// List API keys for the authenticated user
+		const apiKeys = await listAPIKeys(payload.account_id, env);
+
+		log({
+			event: 'api_keys_listed_success',
+			account_id: payload.account_id,
+			key_count: apiKeys.length,
+			request_id: requestId,
+		});
+
+		// Return the API keys list
+		return new Response(
+			JSON.stringify({
+				success: true,
+				api_keys: apiKeys,
+				request_id: requestId,
+			}),
+			{
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
+
+	} catch (error) {
+		log({
+			event: 'api_key_listing_failed',
+			error: error instanceof Error ? error.message : 'Unknown error',
+			request_id: requestId,
+		});
+
+		// Handle known errors
+		if (error instanceof WorkerError) {
+			return error.toResponse();
+		}
+
+		// Don't expose internal errors to client
+		return new Response(
+			JSON.stringify({
+				error: 'Failed to list API keys. Please try again.',
+				request_id: requestId,
+			}),
+			{
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			}
+		);
+	}
+}
+
+/**
+ * Handle API key revocation for authenticated users
+ * Implements AQ-2.2: Je révoque mes clés (DELETE sets revoked=true)
+ */
+export async function handleAPIKeyRevocation(context: RequestContext): Promise<Response> {
+	const { request, env, requestId, url } = context;
+	try {
+		// Extract key ID from URL path: /dashboard/api-keys/{keyId}
+		const pathParts = url.pathname.split('/');
+		const keyId = pathParts[3];
+
+		// Treat empty or duplicated segment (e.g., /dashboard/api-keys/api-keys) as missing key ID
+		if (!keyId || keyId === 'api-keys') {
+			return new Response(
+				JSON.stringify({ error: 'API key ID is required.' }),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		validateAuthEnvironment(env, requestId);
+
+		const sessionToken = extractSessionTokenFromCookies(request);
+		if (!sessionToken) {
+			log({ event: 'api_key_revocation_no_session', key_id: keyId, request_id: requestId });
+			return new Response(
+				JSON.stringify({ error: 'Authentication required. Please log in first.', request_id: requestId }),
+				{ status: 401, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		const payload = await verifyJWTToken<SessionPayload>(sessionToken, env.JWT_SECRET as string);
+		if (!payload) {
+			log({ event: 'api_key_revocation_invalid_session', key_id: keyId, request_id: requestId });
+			return new Response(
+				JSON.stringify({ error: 'Invalid or expired session. Please log in again.', request_id: requestId }),
+				{ status: 401, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		const success = await revokeAPIKey(keyId, payload.account_id, env);
+		if (!success) {
+			log({ event: 'api_key_revocation_not_found', account_id: payload.account_id, key_id: keyId, request_id: requestId });
+			return new Response(
+				JSON.stringify({ error: 'API key not found or not authorized to revoke.', request_id: requestId }),
+				{ status: 404, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
+
+		log({ event: 'api_key_revoked_success', account_id: payload.account_id, key_id: keyId, request_id: requestId });
+		return new Response(
+			JSON.stringify({ success: true, message: 'API key revoked successfully.', key_id: keyId, request_id: requestId }),
+			{ status: 200, headers: { 'Content-Type': 'application/json' } }
+		);
+	} catch (error) {
+		log({ event: 'api_key_revocation_failed', error: error instanceof Error ? error.message : 'Unknown error', request_id: requestId });
+		if (error instanceof WorkerError) return error.toResponse();
+		return new Response(
+			JSON.stringify({ error: 'Failed to revoke API key. Please try again.', request_id: requestId }),
+			{ status: 500, headers: { 'Content-Type': 'application/json' } }
+		);
 	}
 }
