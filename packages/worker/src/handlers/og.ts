@@ -5,6 +5,7 @@ import { TemplateType } from '../templates';
 import { renderOpenGraphImage } from '../render';
 import { verifyAPIKey } from '../utils/auth';
 import { getMonthlyUsage, incrementMonthlyUsage } from '../kv/usage';
+// import { checkAndIncrementQuota } from '../utils/quota'; // Not used – AQ-3.2 uses kv/usage helpers
 import { 
 	getCacheStatus, 
 	generateETag, 
@@ -42,6 +43,7 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 			log({ event: 'auth_failed', status: 401, request_id: requestId });
 			throw new WorkerError('Unauthorized', 401, requestId);
 		}
+
 		// AQ-3.1/AQ-3.2: Enforce monthly quota per API key (kid)
 		const { accountId, kid } = verifiedKey;
 		// Determine plan limit; for now, free tier default 1 req/month as per AQ-3.1
@@ -51,10 +53,13 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 		const current = await getMonthlyUsage(kid, env);
 		if (current >= limit) {
 			log({ event: 'quota_exceeded', kid, account_id: accountId, current, limit, request_id: requestId });
-			return new Response(JSON.stringify({ error: 'Too many requests: monthly quota exceeded', request_id: requestId }), {
-				status: 429,
-				headers: { 'Content-Type': 'application/json' }
-			});
+			return new Response(
+				JSON.stringify({ error: 'Too many requests: monthly quota exceeded', request_id: requestId }),
+				{
+					status: 429,
+					headers: { 'Content-Type': 'application/json' }
+				}
+			);
 		}
 	}
 

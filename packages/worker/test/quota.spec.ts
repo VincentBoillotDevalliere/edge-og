@@ -116,6 +116,6 @@ describe('AQ-3.2: Monthly usage key and quota', () => {
 
     expect(res.status).toBe(200);
     // increment should be scheduled
-    expect(putSpy).toHaveBeenCalled();
+  expect(putSpy).toHaveBeenCalled();
   });
 });
