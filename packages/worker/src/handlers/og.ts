@@ -3,6 +3,7 @@ import { WorkerError } from '../utils/error';
 import { log } from '../utils/logger';
 import { TemplateType } from '../templates';
 import { renderOpenGraphImage } from '../render';
+import { verifyAPIKey } from '../utils/auth';
 import { 
 	getCacheStatus, 
 	generateETag, 
@@ -26,6 +27,21 @@ import {
 export async function handleOGImageGeneration(context: RequestContext): Promise<Response> {
 	const { url, requestId, ctx, request, env } = context;
 	const startRender = performance.now();
+
+	// AQ-2.3: Require Authorization: Bearer API key
+	// Production default: enforce; allow opt-out in development unless explicitly required
+	const requireAuth = (env.ENVIRONMENT === 'production') || (env as any).REQUIRE_AUTH === 'true';
+	if (requireAuth) {
+		const authHeader = request.headers.get('Authorization') || '';
+		const accountId = await verifyAPIKey(authHeader, env);
+		if (!accountId) {
+			// Log auth failure minimally (no secrets)
+			log({ event: 'auth_failed', status: 401, request_id: requestId });
+			throw new WorkerError('Unauthorized', 401, requestId);
+		}
+		// Optionally attach accountId to context for future quota checks (AQ-3.x)
+		// (not persisted on context type to keep change minimal)
+	}
 
 	// EC-1: Get cache status for monitoring
 	const cacheStatus = getCacheStatus(request);
