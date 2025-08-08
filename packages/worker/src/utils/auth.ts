@@ -806,7 +806,7 @@ export async function storeAPIKey(
  * @param env - Environment bindings
  * @returns Account ID if valid, null if invalid
  */
-export async function verifyAPIKey(authHeader: string, env: Env): Promise<string | null> {
+export async function verifyAPIKey(authHeader: string, env: Env): Promise<{ accountId: string; kid: string } | null> {
 	if (!authHeader.startsWith('Bearer ')) {
 		return null;
 	}
@@ -850,7 +850,7 @@ export async function verifyAPIKey(authHeader: string, env: Env): Promise<string
 			});
 		});
 		
-		return keyData.account;
+		return { accountId: keyData.account, kid };
 	} catch (error) {
 		log({
 			event: 'api_key_verification_failed',

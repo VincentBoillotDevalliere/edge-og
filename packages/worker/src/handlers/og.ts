@@ -4,6 +4,7 @@ import { log } from '../utils/logger';
 import { TemplateType } from '../templates';
 import { renderOpenGraphImage } from '../render';
 import { verifyAPIKey } from '../utils/auth';
+import { checkAndIncrementQuota } from '../utils/quota';
 import { 
 	getCacheStatus, 
 	generateETag, 
@@ -33,14 +34,38 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 	const requireAuth = (env.ENVIRONMENT === 'production') || (env as any).REQUIRE_AUTH === 'true';
 	if (requireAuth) {
 		const authHeader = request.headers.get('Authorization') || '';
-		const accountId = await verifyAPIKey(authHeader, env);
-		if (!accountId) {
+		const auth = await verifyAPIKey(authHeader, env);
+		if (!auth) {
 			// Log auth failure minimally (no secrets)
 			log({ event: 'auth_failed', status: 401, request_id: requestId });
 			throw new WorkerError('Unauthorized', 401, requestId);
 		}
-		// Optionally attach accountId to context for future quota checks (AQ-3.x)
-		// (not persisted on context type to keep change minimal)
+
+		// AQ-3.1: Enforce free tier quota (1 image/month default)
+		// Read plan from ACCOUNTS (optional optimization later). For now, assume 'free'.
+		let plan: string | undefined = 'free';
+		try {
+			const accountKey = `account:${auth.accountId}`;
+			const acc = await env.ACCOUNTS.get(accountKey, 'json') as { plan?: string } | null;
+			plan = acc?.plan || 'free';
+		} catch {}
+
+		const quota = await checkAndIncrementQuota(auth.kid, env, requestId, plan);
+		if (!quota.allowed) {
+			return new Response(
+				JSON.stringify({
+					error: 'Monthly quota exceeded for current plan.',
+					plan,
+					limit: quota.limit,
+					usage: quota.current,
+					request_id: requestId,
+				}),
+				{
+					status: 429,
+					headers: { 'Content-Type': 'application/json', 'Retry-After': '2592000' }, // ~30 days
+				}
+			);
+		}
 	}
 
 	// EC-1: Get cache status for monitoring
