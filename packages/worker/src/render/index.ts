@@ -2,6 +2,7 @@ export {};
 
 import { generateSVG, getFontsByName, getFontsByUrl } from './svg';
 import { svgToPng } from './png';
+import { log } from '../utils/logger';
 import {
   DefaultTemplate,
   BlogTemplate,
@@ -50,7 +51,7 @@ export async function renderOpenGraphImage(params: {
   instructor?: string;
   level?: string;
   emoji?: string; // CG-5: Custom emoji support
-}): Promise<ArrayBuffer | string> {
+}): Promise<Uint8Array | string> {
   const { 
     title, 
     description, 
@@ -179,7 +180,7 @@ export async function renderOpenGraphImage(params: {
     const pngBuffer = await svgToPng(svg);
     return pngBuffer;
   } catch (error) {
-    console.warn('PNG conversion failed, details:', error instanceof Error ? error.message : String(error));
+    log({ event: 'png_conversion_failed', message: error instanceof Error ? error.message : String(error) });
     
     // Check if this is a WASM-related error that should trigger fallback
     const isWasmError = error instanceof Error && (
@@ -191,7 +192,7 @@ export async function renderOpenGraphImage(params: {
     );
     
     if (fallbackToSvg || isWasmError) {
-      console.log('Falling back to SVG format due to PNG conversion failure');
+      log({ event: 'fallback_to_svg', reason: isWasmError ? 'wasm_error' : 'explicit_fallback' });
       return svg;
     } else {
       // Re-throw the error if fallback is disabled and it's not a WASM issue

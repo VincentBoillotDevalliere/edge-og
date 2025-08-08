@@ -489,7 +489,7 @@ ${baseUrl}/og?title=Tech%20Conference%202025&description=Join%20industry%20leade
 					alert('Error: ' + (data.error || 'Failed to generate API key'));
 				}
 			} catch (error) {
-				console.error('Error generating API key:', error);
+				// Client-side console is acceptable; keep minimal
 				alert('Failed to generate API key. Please try again.');
 			} finally {
 				// Reset button state
@@ -511,7 +511,6 @@ ${baseUrl}/og?title=Tech%20Conference%202025&description=Join%20industry%20leade
 						button.style.background = '#28a745';
 					}, 2000);
 				}).catch(function(err) {
-					console.error('Failed to copy to clipboard:', err);
 					// Fallback - select the text
 					const keyElement = document.getElementById('generatedKey');
 					const range = document.createRange();

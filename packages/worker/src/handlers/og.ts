@@ -31,7 +31,7 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 
 	// AQ-2.3: Require Authorization: Bearer API key
 	// Production default: enforce; allow opt-out in development unless explicitly required
-	const requireAuth = (env.ENVIRONMENT === 'production') || (env as any).REQUIRE_AUTH === 'true';
+	const requireAuth = env.ENVIRONMENT === 'production' || (env as unknown as { REQUIRE_AUTH?: string }).REQUIRE_AUTH === 'true';
 	if (requireAuth) {
 		const authHeader = request.headers.get('Authorization') || '';
 		const auth = await verifyAPIKey(authHeader, env);
@@ -93,12 +93,12 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 			cacheVersion,
 			'version_mismatch'
 		);
-		log(invalidationMetrics as any);
+			log(invalidationMetrics as Record<string, unknown> & { event: string });
 		wasInvalidated = true;
 	}
 
 	// Generate the image with error handling for WASM issues
-	let result;
+	let result: string | Uint8Array;
 	try {
 		result = await renderOpenGraphImage(params);
 	} catch (error) {
@@ -109,13 +109,13 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 			error.message.includes('PNG conversion is not available in local development') ||
 			error.message.includes('WASM')
 		)) {
-			console.warn('WASM error occurred, attempting SVG fallback:', error.message);
+			log({ event: 'wasm_png_error', status: 200, request_id: requestId, message: error.message });
 			
 			// Try to generate SVG instead
 			try {
 				result = await renderOpenGraphImage({ ...params, format: 'svg' });
 			} catch (svgError) {
-				console.error('SVG fallback also failed:', svgError);
+				log({ event: 'svg_fallback_failed', status: 500, request_id: requestId, message: svgError instanceof Error ? svgError.message : String(svgError) });
 				throw new WorkerError('Image generation failed', 500, requestId);
 			}
 		} else {
@@ -161,11 +161,11 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 		requestId,
 		params.template || 'default'
 	);
-	log(cacheMetrics as any); // Type assertion for compatibility with LogData
+	log(cacheMetrics as Record<string, unknown> & { event: string });
 
 	// Determine content type and response body
 	const contentType = resultIsSvg ? 'image/svg+xml' : 'image/png';
-	const responseBody = resultIsSvg ? result as string : result as ArrayBuffer;
+	const responseBody: BodyInit = resultIsSvg ? (result as string) : (result as Uint8Array);
 
 	// EC-2: Generate versioned cache headers with invalidation support
 	const headers = getVersionedCacheHeaders(

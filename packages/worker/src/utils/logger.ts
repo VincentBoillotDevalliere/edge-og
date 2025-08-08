@@ -9,7 +9,7 @@ export interface LogData {
   duration_ms?: number;
   status?: number;
   request_id?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export function log(data: LogData): void {
@@ -24,7 +24,7 @@ export function logRequest(
   startTime: number,
   status: number,
   requestId: string,
-  additionalData: Record<string, any> = {}
+  additionalData: Record<string, unknown> = {}
 ): void {
   const duration_ms = Date.now() - startTime;
   

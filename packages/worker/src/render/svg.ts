@@ -1,6 +1,7 @@
 export {};
 
 import satori, { type SatoriOptions } from 'satori';
+import { log } from '../utils/logger';
 
 /**
  * Font configuration for CG-2: Support multiple font families with fallbacks
@@ -31,7 +32,7 @@ type FontName = keyof typeof FONT_CONFIGS;
  * Updated for CG-2: Support custom fonts with fallbacks
  */
 export async function generateSVG(
-  element: any,
+  element: unknown,
   options: {
     width?: number;
     height?: number;
@@ -44,7 +45,7 @@ export async function generateSVG(
     // Use provided fonts or fall back to Inter
     const defaultFonts: SatoriOptions['fonts'] = fonts.length > 0 ? fonts : await getFontsByName('inter');
 
-    const svg = await satori(element, {
+    const svg = await satori(element as any, {
       width,
       height,
       fonts: defaultFonts,
@@ -76,17 +77,17 @@ export async function getFontsByName(fontName: FontName = 'inter'): Promise<Sato
   try {
     const config = FONT_CONFIGS[fontName];
     if (!config) {
-      console.warn(`Font "${fontName}" not found, falling back to Inter`);
+      log({ event: 'font_not_found', font: fontName });
       return await loadFont(FONT_CONFIGS.inter);
     }
     
     return await loadFont(config);
   } catch (error) {
-    console.warn(`Failed to load font "${fontName}", falling back to Inter:`, error);
+    log({ event: 'font_load_failed', font: fontName, error: error instanceof Error ? error.message : String(error) });
     try {
       return await loadFont(FONT_CONFIGS.inter);
     } catch (fallbackError) {
-      console.error('Even Inter font fallback failed:', fallbackError);
+      log({ event: 'font_inter_fallback_failed', error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError) });
       throw new Error(`Font loading completely failed: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`);
     }
   }
@@ -125,7 +126,7 @@ export async function getFontsByUrl(fontUrl: string): Promise<SatoriOptions['fon
     ];
 
     if (contentType && !validContentTypes.some(type => contentType.includes(type))) {
-      console.warn(`Suspicious content type for font: ${contentType}`);
+      log({ event: 'font_content_type_suspicious', content_type: contentType });
     }
 
     const fontData = await fontResponse.arrayBuffer();
@@ -160,9 +161,9 @@ export async function getFontsByUrl(fontUrl: string): Promise<SatoriOptions['fon
       },
     ];
   } catch (error) {
-    console.warn(`Failed to load custom font from ${fontUrl}:`, error);
+    log({ event: 'font_custom_load_failed', url: fontUrl, error: error instanceof Error ? error.message : String(error) });
     // Fallback to Inter if custom font loading fails
-    console.log('Falling back to Inter font');
+    log({ event: 'font_fallback_inter' });
     return await getFontsByName('inter');
   }
 }
@@ -266,7 +267,7 @@ function getEmojiHex(emoji: string): string | null {
     }
     return codePoints.join('-');
   } catch (error) {
-    console.warn(`Failed to convert emoji ${emoji} to hex:`, error);
+    log({ event: 'emoji_hex_convert_failed', emoji, error: error instanceof Error ? error.message : String(error) });
     return null;
   }
 }

@@ -2,6 +2,7 @@
  * Shared utilities for all templates (CG-3)
  * Contains common theme, font, and text sanitization functions
  */
+import { log } from '../utils/logger';
 
 /**
  * Get theme color configuration
@@ -59,7 +60,7 @@ export function getFontFamily(font: 'inter' | 'roboto' | 'playfair' | 'opensans'
       return `${fontFamily}, sans-serif`; // Add fallback
     } catch {
       // If URL parsing fails, fall back to selected font
-      console.warn('Invalid custom font URL, falling back to selected font');
+      log({ event: 'custom_font_url_invalid' });
     }
   }
 

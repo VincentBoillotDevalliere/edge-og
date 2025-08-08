@@ -30,11 +30,11 @@ export async function handleHomepage(context: RequestContext): Promise<Response>
 
 	return new Response(html, {
 		headers: {
-			'Content-Type': 'text/html; charset=utf-8',
-			'Cache-Control': isAuthed
-				? 'private, no-cache, no-store, must-revalidate'
-				: 'public, max-age=3600',
-		},
+				'Content-Type': 'text/html; charset=utf-8',
+				'Cache-Control': isAuthed
+					? 'private, no-cache, no-store, must-revalidate'
+					: 'public, max-age=3600',
+			},
 	});
 }
 

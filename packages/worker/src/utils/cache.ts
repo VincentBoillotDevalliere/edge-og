@@ -57,7 +57,7 @@ export function getCacheStatus(request: Request): {
 	region: string;
 } {
 	// Extract cache status from Cloudflare context
-	const cf = (request as any).cf;
+	const cf = (request as Request & { cf?: { cacheStatus?: string; colo?: string } }).cf;
 	const cacheStatus = cf?.cacheStatus || 'UNKNOWN';
 	const region = cf?.colo || 'unknown';
 	
@@ -156,7 +156,10 @@ export interface CacheMetrics {
  * Generate cache invalidation hash for EC-2 support
  * Creates a version hash that changes when content should be invalidated
  */
-export function generateCacheVersion(baseParams: Record<string, unknown>, env?: any): string {
+export function generateCacheVersion(
+	baseParams: Record<string, unknown>,
+	env?: Partial<Env> & { CACHE_VERSION?: string }
+): string {
 	const versionContent = {
 		...baseParams,
 		// Add deployment version or timestamp for invalidation control  
@@ -268,7 +271,7 @@ export function getVersionedCacheHeaders(
  */
 export function extractCacheVersion(
 	searchParams: URLSearchParams,
-	env?: any
+	env?: Partial<Env> & { CACHE_VERSION?: string }
 ): string | undefined {
 	// Check for explicit version parameter (highest priority)
 	const versionParam = searchParams.get('v') || searchParams.get('version') || searchParams.get('cache_version');

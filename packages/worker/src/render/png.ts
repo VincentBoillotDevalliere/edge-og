@@ -1,6 +1,7 @@
 export {};
 
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
+import { log } from '../utils/logger';
 
 // Initialize WASM once globally
 let wasmInitialized = false;
@@ -22,11 +23,11 @@ async function ensureWasmInitialized() {
 
   wasmInitializationPromise = (async () => {
     try {
-      console.log('Initializing WASM for resvg...');
+  log({ event: 'wasm_init_start' });
       
       // Try to load WASM from unpkg CDN
-      const wasmUrl = 'https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm';
-      console.log('Fetching WASM from:', wasmUrl);
+  const wasmUrl = 'https://unpkg.com/@resvg/resvg-wasm@2.6.2/index_bg.wasm';
+  log({ event: 'wasm_fetch', url: wasmUrl });
       
       const wasmResponse = await fetch(wasmUrl);
       if (!wasmResponse.ok) {
@@ -34,14 +35,14 @@ async function ensureWasmInitialized() {
       }
       
       const wasmBuffer = await wasmResponse.arrayBuffer();
-      console.log(`WASM loaded: ${wasmBuffer.byteLength} bytes`);
+  log({ event: 'wasm_loaded', bytes: wasmBuffer.byteLength });
       
       // Initialize resvg with the WASM buffer
       await initWasm(wasmBuffer);
       wasmInitialized = true;
-      console.log('WASM initialized successfully');
+  log({ event: 'wasm_initialized' });
     } catch (error) {
-      console.error('Failed to initialize WASM:', error);
+  log({ event: 'wasm_init_failed', error: error instanceof Error ? error.message : String(error) });
       wasmUnavailable = true;
       wasmInitializationPromise = null;
       
@@ -55,7 +56,7 @@ async function ensureWasmInitialized() {
       }
       
       // Always provide a helpful error message for other WASM errors
-      throw new Error(`PNG conversion failed to initialize: ${error instanceof Error ? error.message : 'Unknown WASM error'}. Use format=svg for testing, or deploy to Cloudflare Workers for full PNG functionality.`);
+  throw new Error(`PNG conversion failed to initialize: ${error instanceof Error ? error.message : 'Unknown WASM error'}. Use format=svg for testing, or deploy to Cloudflare Workers for full PNG functionality.`);
     }
   })();
 
@@ -66,7 +67,7 @@ async function ensureWasmInitialized() {
  * Convert SVG to PNG using resvg-wasm
  * Outputs PNG optimized for Open Graph (1200x630)
  */
-export async function svgToPng(svgString: string): Promise<ArrayBuffer> {
+export async function svgToPng(svgString: string): Promise<Uint8Array> {
   try {
     // Ensure WASM is initialized before using Resvg
     await ensureWasmInitialized();
@@ -79,10 +80,9 @@ export async function svgToPng(svgString: string): Promise<ArrayBuffer> {
       },
     });
 
-    const pngData = resvg.render();
-    const pngBuffer = pngData.asPng();
-    
-    return pngBuffer;
+  const pngData = resvg.render();
+  const pngBuffer = pngData.asPng();
+  return pngBuffer;
   } catch (error) {
     throw new Error(`PNG conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
