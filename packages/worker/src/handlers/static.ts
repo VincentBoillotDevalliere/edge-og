@@ -26,7 +26,8 @@ export async function handleHomepage(context: RequestContext): Promise<Response>
 
 	const html = homeHtml
 		.replaceAll('%%BASE_URL%%', baseUrl)
-		.replaceAll('%%IS_AUTH%%', isAuthed ? 'true' : 'false');
+		.replaceAll('%%IS_AUTH%%', isAuthed ? 'true' : 'false')
+		.replaceAll('%%TURNSTILE_SITE_KEY%%', env.TURNSTILE_SITE_KEY || '');
 
 	return new Response(html, {
 		headers: {

@@ -53,6 +53,19 @@ describe('Edge-OG E2E Tests', () => {
 					headers: { 'Content-Type': 'application/json' }
 				});
 			}
+
+			// Mock Cloudflare Turnstile siteverify
+			if (typeof url === 'string' && url.includes('challenges.cloudflare.com/turnstile/v0/siteverify')) {
+				// Simulate success when token is 'e2e-valid-token', failure otherwise
+				try {
+					const body = options?.body instanceof URLSearchParams ? options.body : new URLSearchParams(options?.body);
+					const token = body.get('response');
+					const success = token === 'e2e-valid-token';
+					return new Response(JSON.stringify({ success }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+				} catch {
+					return new Response(JSON.stringify({ success: false }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+				}
+			}
 			
 			// Mock font loading for custom fonts
 			if (url.includes('fonts.') && url.includes('.ttf')) {
@@ -306,6 +319,88 @@ describe('Edge-OG E2E Tests', () => {
 				expect(dashboardHtml).toContain('Edge-OG Dashboard');
 				expect(dashboardHtml).toContain('Welcome back!');
 				expect(dashboardHtml).toContain('free Plan');
+			});
+
+			it('enforces Turnstile in production and accepts valid token', async () => {
+				// Prepare a production-like env
+				const accountsStore = new Map<string, string>();
+				const testEnv = {
+					...env,
+					ENVIRONMENT: 'production',
+					JWT_SECRET: 'e2e-prod-secret-at-least-32-characters-long-123',
+					EMAIL_PEPPER: 'e2e-prod-pepper-16chars',
+					MAILCHANNELS_API_TOKEN: 'e2e-token',
+					// Force simulated email sending to avoid external network calls
+					RESEND_API_KEY: 'resend_test_key_placeholder',
+					TURNSTILE_SECRET_KEY: 'tsl-secret',
+					TURNSTILE_SITE_KEY: 'tsl-site',
+					BASE_URL: 'https://prod.edge-og.com',
+					ACCOUNTS: {
+						get: vi.fn().mockImplementation(async (key) => accountsStore.get(key) || null),
+						put: vi.fn().mockImplementation(async (key, value) => { accountsStore.set(key, value); }),
+						delete: vi.fn().mockResolvedValue(undefined),
+						list: vi.fn().mockResolvedValue({ keys: [] }),
+						getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+					},
+					USAGE: {
+						get: vi.fn().mockResolvedValue(null),
+						put: vi.fn().mockResolvedValue(undefined),
+						delete: vi.fn().mockResolvedValue(undefined),
+						list: vi.fn().mockResolvedValue({ keys: [] }),
+						getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+					},
+				} as any;
+
+				// Send request with a valid Turnstile token
+				const req = new IncomingRequest('https://prod.edge-og.com/auth/request-link', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.10' },
+					body: JSON.stringify({ email: 'prodtest@example.com', turnstileToken: 'e2e-valid-token' }),
+				});
+				const ctx = createExecutionContext();
+				const res = await worker.fetch(req, testEnv, ctx);
+				await waitOnExecutionContext(ctx);
+				expect(res.status).toBe(200);
+			});
+
+			it('rejects when Turnstile token is invalid in production', async () => {
+				const accountsStore = new Map<string, string>();
+				const testEnv = {
+					...env,
+					ENVIRONMENT: 'production',
+					JWT_SECRET: 'e2e-prod-secret-at-least-32-characters-long-abc',
+					EMAIL_PEPPER: 'e2e-prod-pepper-16',
+					MAILCHANNELS_API_TOKEN: 'e2e-token',
+					TURNSTILE_SECRET_KEY: 'tsl-secret',
+					TURNSTILE_SITE_KEY: 'tsl-site',
+					BASE_URL: 'https://prod.edge-og.com',
+					ACCOUNTS: {
+						get: vi.fn().mockImplementation(async (key) => accountsStore.get(key) || null),
+						put: vi.fn().mockImplementation(async (key, value) => { accountsStore.set(key, value); }),
+						delete: vi.fn().mockResolvedValue(undefined),
+						list: vi.fn().mockResolvedValue({ keys: [] }),
+						getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+					},
+					USAGE: {
+						get: vi.fn().mockResolvedValue(null),
+						put: vi.fn().mockResolvedValue(undefined),
+						delete: vi.fn().mockResolvedValue(undefined),
+						list: vi.fn().mockResolvedValue({ keys: [] }),
+						getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+					},
+				} as any;
+
+				const req = new IncomingRequest('https://prod.edge-og.com/auth/request-link', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.11' },
+					body: JSON.stringify({ email: 'prodtest2@example.com', turnstileToken: 'e2e-invalid-token' }),
+				});
+				const ctx = createExecutionContext();
+				const res = await worker.fetch(req, testEnv, ctx);
+				await waitOnExecutionContext(ctx);
+				expect(res.status).toBe(400);
+				const data = await res.json() as any;
+				expect(data.error).toContain('CAPTCHA verification failed');
 			});
 
 			it('redirects unauthenticated dashboard access to homepage', async () => {

@@ -11,6 +11,8 @@
     <meta property="og:url" content="%%BASE_URL%%">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
+    <!-- Cloudflare Turnstile widget script -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -179,6 +181,12 @@
                     <div class="form-group">
                         <label for="signup-email">Email Address</label>
                         <input type="email" id="signup-email" placeholder="your.email@example.com" required>
+                    </div>
+                    <div class="form-group" id="captcha-container">
+                        <!-- Cloudflare Turnstile widget -->
+                        <div class="cf-turnstile" data-sitekey="%%TURNSTILE_SITE_KEY%%" data-callback="onTurnstileSuccess"></div>
+                        <input type="hidden" id="turnstile-token" value="">
+                        <small style="display:block; margin-top:8px; color:#666; font-size: 11px;">Protected by Cloudflare Turnstile</small>
                     </div>
                     <button class="btn" onclick="requestMagicLink()" style="width: 100%; margin-top: 1rem;">Send Magic Link ✨</button>
                     <div id="signup-result" style="margin-top: 1rem; padding: 1rem; border-radius: 8px; display: none;"></div>
@@ -452,6 +460,11 @@
                 if (login) login.style.display = '';
             }
         })();
+        // Turnstile callback to capture token
+        function onTurnstileSuccess(token) {
+            var el = document.getElementById('turnstile-token');
+            if (el) el.value = token || '';
+        }
         function updatePreview() {
             const template = document.getElementById('template').value;
             const title = encodeURIComponent(document.getElementById('title').value);
@@ -477,6 +490,50 @@
             newImg.onload = function() { previewImg.src = url; previewImg.style.opacity = '1'; };
             newImg.src = url;
             document.getElementById('generated-url').textContent = url;
+        }
+
+        // Magic-link signup function (sends optional Turnstile token)
+        async function requestMagicLink() {
+            const emailEl = document.getElementById('signup-email');
+            const tokenEl = document.getElementById('turnstile-token');
+            const resultDiv = document.getElementById('signup-result');
+            const email = emailEl ? emailEl.value.trim() : '';
+            const turnstileToken = tokenEl ? tokenEl.value.trim() : '';
+
+            if (!email || !email.includes('@')) {
+                resultDiv.style.display = 'block';
+                resultDiv.style.background = '#fee2e2';
+                resultDiv.style.color = '#dc2626';
+                resultDiv.innerHTML = '❌ Please enter a valid email address';
+                return;
+            }
+
+            resultDiv.style.display = 'block';
+            resultDiv.style.background = '#fef3c7';
+            resultDiv.style.color = '#d97706';
+            resultDiv.innerHTML = '⏳ Sending magic link...';
+
+            try {
+                const res = await fetch('%%BASE_URL%%/auth/request-link', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, turnstileToken })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    resultDiv.style.background = '#d1fae5';
+                    resultDiv.style.color = '#065f46';
+                    resultDiv.innerHTML = '✅ ' + (data.message || 'Magic link sent. Check your email.');
+                } else {
+                    resultDiv.style.background = '#fee2e2';
+                    resultDiv.style.color = '#dc2626';
+                    resultDiv.innerHTML = '❌ ' + (data.error || 'Failed to send magic link');
+                }
+            } catch (e) {
+                resultDiv.style.background = '#fee2e2';
+                resultDiv.style.color = '#dc2626';
+                resultDiv.innerHTML = '❌ Network error. Please try again.';
+            }
         }
 
         function copyUrl() {

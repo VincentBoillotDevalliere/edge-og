@@ -16,6 +16,9 @@ declare namespace Cloudflare {
 		// Environment
 		ENVIRONMENT?: string;
 		BASE_URL?: string;
+    // Turnstile CAPTCHA
+    TURNSTILE_SECRET_KEY?: string;
+    TURNSTILE_SITE_KEY?: string;
         // Admin
         ADMIN_SECRET?: string;
 	}
