@@ -58,7 +58,8 @@ export async function checkAndIncrementQuota(
   kid: string,
   env: Env,
   requestId?: string,
-  plan?: string
+  plan?: string,
+  ip?: string
 ): Promise<QuotaCheckResult> {
   const yyyymm = getCurrentYYYYMM();
   const key = `usage:${kid}:${yyyymm}`;
@@ -71,12 +72,12 @@ export async function checkAndIncrementQuota(
     const allowed = current <= limit;
 
     if (!allowed) {
-      log({ event: 'quota_exceeded', kid, plan: plan || 'free', current, limit, request_id: requestId });
+      log({ event: 'quota_exceeded', kid, ip, plan: plan || 'free', current, limit, request_id: requestId });
     }
 
     return { allowed, current, limit, key };
   } catch (error) {
-    log({ event: 'quota_check_failed', kid, error: error instanceof Error ? error.message : 'Unknown error', request_id: requestId });
+    log({ event: 'quota_check_failed', kid, ip, error: error instanceof Error ? error.message : 'Unknown error', request_id: requestId });
     // On failure, default to allow to avoid accidental outages
     return { allowed: true, current: 0, limit, key };
   }

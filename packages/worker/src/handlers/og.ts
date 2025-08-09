@@ -27,6 +27,9 @@ import {
  */
 export async function handleOGImageGeneration(context: RequestContext): Promise<Response> {
 	const { url, requestId, ctx, request, env } = context;
+
+	// Extract client IP from standard CF headers when available
+	const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('x-forwarded-for') || undefined;
 	const startRender = performance.now();
 
 	// AQ-2.3: Require Authorization: Bearer API key
@@ -36,8 +39,15 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 		const authHeader = request.headers.get('Authorization') || '';
 		const auth = await verifyAPIKey(authHeader, env);
 		if (!auth) {
-			// Log auth failure minimally (no secrets)
-			log({ event: 'auth_failed', status: 401, request_id: requestId });
+			// AQ-4.1: Log structured auth failure with {event, kid (if any), ip}
+			let kid: string | undefined;
+			try {
+				if (authHeader.startsWith('Bearer eog_')) {
+					const parts = authHeader.substring(7).split('_');
+					if (parts.length >= 2) kid = parts[1];
+				}
+			} catch {}
+			log({ event: 'auth_failed', kid, ip, status: 401, request_id: requestId });
 			throw new WorkerError('Unauthorized', 401, requestId);
 		}
 
@@ -50,8 +60,10 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 			plan = acc?.plan || 'free';
 		} catch {}
 
-		const quota = await checkAndIncrementQuota(auth.kid, env, requestId, plan);
+		const quota = await checkAndIncrementQuota(auth.kid, env, requestId, plan, ip);
 		if (!quota.allowed) {
+			// AQ-4.1: Ensure refusal is logged (redundant with utils.quota but safe)
+			log({ event: 'quota_refused', kid: auth.kid, ip, plan, current: quota.current, limit: quota.limit, request_id: requestId });
 			return new Response(
 				JSON.stringify({
 					error: 'Monthly quota exceeded for current plan.',
