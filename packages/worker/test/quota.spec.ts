@@ -12,6 +12,8 @@ vi.hoisted(() => {
 import worker from '../src/index';
 import { generateAPIKey, storeAPIKey } from '../src/utils/auth';
 import { getCurrentYYYYMM } from '../src/utils/quota';
+import { resetMonthlyQuota, getMonthlyUsage, getUsageKeyForMonth } from '../src/kv/usage';
+import { handleAdminUsageReset } from '../src/handlers/admin';
 
 const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 
@@ -280,5 +282,209 @@ describe('AQ-3.3: Paid plan quotas (limits by plan)', () => {
     const data = await res.json() as any;
     expect(data.limit).toBe(10000);
     expect(data.usage).toBeGreaterThan(10000);
+  });
+});
+
+describe('AQ-3.4: Admin resets a monthly quota', () => {
+  beforeAll(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Not Found', { status: 404 })));
+  });
+  afterAll(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('resets usage to zero and allows next request', async () => {
+    const accountId = 'acc_reset_1';
+
+    // In-memory KV stubs
+    const apiKeysStore = new Map<string, string>();
+    const usageStore = new Map<string, string>();
+    const accountsStore = new Map<string, string>();
+
+    const testEnv = {
+      ...env,
+      ENVIRONMENT: 'production',
+      JWT_SECRET: 'quota-test-secret-at-least-32-characters-xyz-123',
+      API_KEYS: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = apiKeysStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          apiKeysStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+      USAGE: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = usageStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          usageStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+      ACCOUNTS: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = accountsStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          accountsStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+    } as any;
+
+    // Free plan account for easier small limit
+    await (testEnv.ACCOUNTS as any).put(`account:${accountId}`, JSON.stringify({ plan: 'free' }));
+
+    // Prepare a key
+    const { kid, fullKey, hash } = await generateAPIKey(accountId, 'Reset Quota Key', testEnv);
+    await storeAPIKey(kid, accountId, hash, 'Reset Quota Key', testEnv);
+
+    // Pre-seed as exceeded (count=2, limit=1 for free)
+    const usageKey = getUsageKeyForMonth(kid);
+    usageStore.set(usageKey, JSON.stringify({ count: 2 }));
+
+    // Request should be blocked initially
+    const blockedReq = new IncomingRequest('https://example.com/og?title=Blocked', {
+      headers: { Authorization: `Bearer ${fullKey}` },
+    });
+    const blockedCtx = createExecutionContext();
+    const blockedRes = await worker.fetch(blockedReq, testEnv, blockedCtx);
+    await waitOnExecutionContext(blockedCtx);
+    expect(blockedRes.status).toBe(429);
+
+    // Admin resets usage
+    await resetMonthlyQuota(testEnv as any, kid);
+    const afterReset = await getMonthlyUsage(testEnv as any, kid);
+    expect(afterReset).toBe(0);
+
+    // Next request should pass
+    const okReq = new IncomingRequest('https://example.com/og?title=AfterReset', {
+      headers: { Authorization: `Bearer ${fullKey}` },
+    });
+    const okCtx = createExecutionContext();
+    const okRes = await worker.fetch(okReq, testEnv, okCtx);
+    await waitOnExecutionContext(okCtx);
+    expect(okRes.status).toBe(200);
+  });
+
+  it('REST: POST /admin/usage/reset resets usage when authorized', async () => {
+    const accountId = 'acc_admin_reset_1';
+
+    // In-memory KV stubs
+    const apiKeysStore = new Map<string, string>();
+    const usageStore = new Map<string, string>();
+    const accountsStore = new Map<string, string>();
+
+    const testEnv = {
+      ...env,
+      ENVIRONMENT: 'production',
+      JWT_SECRET: 'quota-test-secret-at-least-32-characters-xyz-123',
+      ADMIN_SECRET: 'topsecret',
+      API_KEYS: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = apiKeysStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          apiKeysStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+      USAGE: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = usageStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          usageStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+      ACCOUNTS: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = accountsStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          accountsStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+    } as any;
+
+    await (testEnv.ACCOUNTS as any).put(`account:${accountId}`, JSON.stringify({ plan: 'free' }));
+    const { kid } = await generateAPIKey(accountId, 'Admin Reset', testEnv);
+    await storeAPIKey(kid, accountId, 'hash-not-used', 'Admin Reset', testEnv);
+
+    // Seed usage to 5
+    const usageKey = getUsageKeyForMonth(kid);
+    usageStore.set(usageKey, JSON.stringify({ count: 5 }));
+
+    const req = new IncomingRequest('https://example.com/admin/usage/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': 'topsecret' },
+      body: JSON.stringify({ kid })
+    });
+    const ctx = createExecutionContext();
+    const res = await handleAdminUsageReset({ request: req, env: testEnv, ctx, requestId: 'req-1', startTime: Date.now(), url: new URL(req.url) });
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.success).toBe(true);
+    expect(data.kid).toBe(kid);
+    expect(data.usage).toBe(0);
+  });
+
+  it('REST: unauthorized without correct admin secret', async () => {
+    const testEnv = { ...env, ADMIN_SECRET: 'topsecret' } as any;
+    const req = new IncomingRequest('https://example.com/admin/usage/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': 'wrong' },
+      body: JSON.stringify({ kid: 'abc' })
+    });
+    await expect(handleAdminUsageReset({ request: req, env: testEnv, ctx: createExecutionContext(), requestId: 'req-2', startTime: Date.now(), url: new URL(req.url) }))
+      .rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  it('REST: validation error for bad content-type and payload', async () => {
+    const testEnv = { ...env, ADMIN_SECRET: 'topsecret' } as any;
+    const reqCT = new IncomingRequest('https://example.com/admin/usage/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain', 'X-Admin-Secret': 'topsecret' },
+      body: 'kid=abc'
+    });
+    await expect(handleAdminUsageReset({ request: reqCT, env: testEnv, ctx: createExecutionContext(), requestId: 'req-3', startTime: Date.now(), url: new URL(reqCT.url) }))
+      .rejects.toMatchObject({ statusCode: 415 });
+
+    const reqBad = new IncomingRequest('https://example.com/admin/usage/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Secret': 'topsecret' },
+      body: JSON.stringify({ kid: '' })
+    });
+    await expect(handleAdminUsageReset({ request: reqBad, env: testEnv, ctx: createExecutionContext(), requestId: 'req-4', startTime: Date.now(), url: new URL(reqBad.url) }))
+      .rejects.toMatchObject({ statusCode: 400 });
   });
 });

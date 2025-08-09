@@ -86,6 +86,7 @@ function getRouteNameFromPath(pathname: string): string {
 	if (pathname === '/auth/request-link') return 'magic_link_requested';
 	if (pathname === '/auth/callback') return 'magic_link_callback';
 	if (pathname === '/dashboard/api-keys') return 'api_key_generated';
+	if (pathname === '/admin/usage/reset') return 'admin_usage_reset';
 	
 	return 'unknown_route';
 }

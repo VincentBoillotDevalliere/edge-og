@@ -16,6 +16,8 @@ declare namespace Cloudflare {
 		// Environment
 		ENVIRONMENT?: string;
 		BASE_URL?: string;
+        // Admin
+        ADMIN_SECRET?: string;
 	}
 }
 interface Env extends Cloudflare.Env {}
