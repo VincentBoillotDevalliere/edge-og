@@ -765,8 +765,8 @@ export async function generateAPIKey(
 	crypto.getRandomValues(kidBytes);
 	const kid = encodeBase62(kidBytes);
 	
-	// Generate 32 bytes for the secret part
-	const secretBytes = new Uint8Array(24); // 24 bytes for secret
+	// Generate 32 bytes for the secret part (≥ 256-bit entropy per AQ-5.2)
+	const secretBytes = new Uint8Array(32); // 32 bytes for secret
 	crypto.getRandomValues(secretBytes);
 	const secret = encodeBase62(secretBytes);
 	
