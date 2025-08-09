@@ -61,6 +61,67 @@ export interface APIKeyData {
 }
 
 /**
+ * Verify Cloudflare Turnstile CAPTCHA token for signup (AQ-5.1)
+ * - In production: require valid token; call Turnstile siteverify
+ * - In non-production: skip verification (to ease local/dev/testing)
+ */
+export async function verifyTurnstileToken(
+	token: string | undefined | null,
+	clientIP: string,
+	env: Env,
+	requestId?: string
+): Promise<boolean> {
+	const isProd = (env.ENVIRONMENT || '').toLowerCase() === 'production';
+
+	// In non-production environments, skip strict verification
+	if (!isProd) {
+		log({ event: 'turnstile_skipped', env: env.ENVIRONMENT || 'dev', request_id: requestId });
+		return true;
+	}
+
+	const secret = env.TURNSTILE_SECRET_KEY as string | undefined;
+	if (!secret) {
+		log({ event: 'turnstile_misconfigured', reason: 'missing_secret', request_id: requestId });
+		return false;
+	}
+
+	if (!token || typeof token !== 'string' || token.length < 10) {
+		log({ event: 'turnstile_failed', reason: 'missing_or_invalid_token', request_id: requestId });
+		return false;
+	}
+
+	try {
+		const body = new URLSearchParams();
+		body.set('secret', secret);
+		body.set('response', token);
+		if (clientIP && clientIP !== 'unknown') body.set('remoteip', clientIP);
+
+		const resp = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body,
+		});
+
+		if (!resp.ok) {
+			log({ event: 'turnstile_failed', reason: 'http_' + resp.status, request_id: requestId });
+			return false;
+		}
+
+		const json = await resp.json() as { success?: boolean; 'error-codes'?: string[] };
+		if (json && json.success) {
+			log({ event: 'turnstile_verified', request_id: requestId });
+			return true;
+		}
+
+		log({ event: 'turnstile_failed', reason: 'verification_false', errors: json?.['error-codes'], request_id: requestId });
+		return false;
+	} catch (error) {
+		log({ event: 'turnstile_failed', reason: 'exception', error: error instanceof Error ? error.message : 'unknown', request_id: requestId });
+		return false;
+	}
+}
+
+/**
  * Rate limiting configuration for magic link requests
  */
 const RATE_LIMIT = {

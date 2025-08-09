@@ -111,7 +111,6 @@ Optimized for blog articles and content posts.
 |-----------|------|---------|------------|-------------|
 | `title` | string | "Blog Post" | 80 chars | Article title |
 | `description` | string | "Read our latest insights..." | 120 chars | Article summary |
-| `author` | string | "Edge-OG" | 30 chars | Author name |
 
 **Test URLs:**
 ```
@@ -180,29 +179,20 @@ Clean, minimalist design for modern brands.
 **Test URLs:**
 ```
 /og?template=minimal&title=Modern%20Design&description=Clean%20aesthetic%20for%20the%20digital%20age&theme=light&font=inter
-
 /og?template=minimal&title=Simplicity&theme=dark&font=roboto
 ```
 
 ### 7. `news` - News Article Template
 Designed for news articles and press releases.
-
-| Parameter | Type | Default | Max Length | Description |
 |-----------|------|---------|------------|-------------|
 | `title` | string | "Breaking News" | 90 chars | News headline |
 | `description` | string | "Latest updates..." | 110 chars | News summary |
-| `source` | string | "Edge-OG News" | 30 chars | News source |
-
 **Test URLs:**
 ```
 /og?template=news&title=Revolutionary%20AI%20Technology%20Announced&source=Tech%20Daily&description=Company%20unveils%20breakthrough%20in%20machine%20learning
-
-/og?template=news&title=Climate%20Change%20Summit%20Results&source=Global%20News&theme=green&font=roboto
 ```
 
 ### 8. `tech` - Technology Template
-Perfect for tech companies and SaaS products.
-
 | Parameter | Type | Default | Max Length | Description |
 |-----------|------|---------|------------|-------------|
 | `title` | string | "Tech Innovation" | 70 chars | Product/service name |

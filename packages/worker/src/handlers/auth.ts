@@ -10,6 +10,7 @@ import {
 	generateMagicLinkToken,
 	sendMagicLinkEmail,
 	checkRateLimit,
+	verifyTurnstileToken,
 	validateAuthEnvironment,
 	verifyJWTToken,
 	generateSessionToken,
@@ -67,8 +68,21 @@ export async function handleMagicLinkRequest(context: RequestContext): Promise<R
 			);
 		}
 
-		// Parse request body
-		const email = await parseEmailFromRequest(request, requestId);
+		// Parse request body (email + optional Turnstile token)
+		const { email, turnstileToken } = await parseEmailAndCaptchaFromRequest(request, requestId);
+
+		// Verify Turnstile CAPTCHA (AQ-5.1)
+		const captchaOk = await verifyTurnstileToken(turnstileToken, clientIP, env, requestId);
+		if (!captchaOk) {
+			log({ event: 'magic_link_captcha_refused', client_ip: clientIP, request_id: requestId });
+			return new Response(
+				JSON.stringify({
+					error: 'CAPTCHA verification failed. Please try again.',
+					request_id: requestId,
+				}),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } }
+			);
+		}
 
 		// Validate email format
 		if (!validateEmail(email)) {
@@ -344,6 +358,25 @@ async function parseEmailFromRequest(request: Request, requestId: string): Promi
 	}
 
 	return email;
+}
+
+/**
+ * Parse email and optional Turnstile token from request body
+ * Accepts JSON: { email, turnstileToken } or form fields 'email', 'cf-turnstile-response'
+ */
+async function parseEmailAndCaptchaFromRequest(request: Request, requestId: string): Promise<{ email: string; turnstileToken?: string }> {
+	const contentType = request.headers.get('Content-Type') || '';
+	if (contentType.includes('application/json')) {
+		const body = await request.json() as { email?: string; turnstileToken?: string };
+		return { email: body.email || '', turnstileToken: body.turnstileToken };
+	}
+	if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+		const formData = await request.formData();
+		const email = formData.get('email')?.toString() || '';
+		const token = (formData.get('turnstileToken') || formData.get('cf-turnstile-response'))?.toString();
+		return { email, turnstileToken: token };
+	}
+	throw new WorkerError('Content-Type must be application/json or application/x-www-form-urlencoded', 400, requestId);
 }
 
 /**
