@@ -91,6 +91,8 @@
 
 ---
 
+Note: AQ‑4.1 implémenté — voir `docs/AQ-4.1-IMPLEMENTATION.md` (logs JSON {event, kid, ip} + tests).
+
 #### 3‑F. Sécurité additionnelle
 
 | ID | User Story | Critères d’acceptation | Priorité |
