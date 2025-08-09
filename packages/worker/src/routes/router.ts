@@ -13,7 +13,8 @@ import {
 	handleOGImageGeneration,
 	handleOGMethodNotAllowed,
 	handleHomepage,
-	handleHealthCheck
+	handleHealthCheck,
+	handleAdminUsageReset
 } from '../handlers';
 
 /**
@@ -86,6 +87,9 @@ export function createRouter(): Router {
 	// Static routes
 	router.addRoute('GET', '/', handleHomepage);
 	router.addRoute('GET', '/health', handleHealthCheck);
+
+	// Admin routes
+	router.addRoute('POST', '/admin/usage/reset', handleAdminUsageReset);
 
 	return router;
 }

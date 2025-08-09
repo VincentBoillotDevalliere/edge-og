@@ -383,3 +383,81 @@ Invalid parameters will use defaults:
 4. **Custom Font (CG-4)**: `/og?template=minimal&title=Brand%20Typography&fontUrl=https://fonts.example.com/CustomFont.ttf`
 
 For any issues or questions, check the main documentation or test logs for detailed error messages.
+
+---
+
+## 🛠️ Admin: Reset Monthly Quota (AQ-3.4)
+
+Admins can reset an API key's monthly usage counter to unblock quota‑limited keys.
+
+Option A — via Wrangler CLI (recommended):
+
+1. Compute the usage key for the current (or target) month: `usage:{KID}:{YYYYMM}`
+2. Run this command to reset the count to zero:
+
+	 wrangler kv:key put --binding=USAGE usage:{KID}:{YYYYMM} 0
+
+Notes:
+- Replace {KID} with the API key ID and {YYYYMM} with the year+month (e.g., 202508)
+- This uses the `USAGE` KV binding configured in `wrangler.toml`
+- Works in any environment where the binding resolves (dev, staging, prod)
+
+Option B — programmatically (internal tooling/tests):
+- Use `resetMonthlyQuota(env, kid)` from `packages/worker/src/kv/usage.ts`
+- Helpers available:
+	- `getUsageKeyForMonth(kid, date?)`
+	- `getMonthlyUsage(env, kid, date?)`
+	- `setMonthlyUsage(env, kid, count, date?)`
+
+Security reminder:
+- Only privileged operators should perform resets
+- All requests remain authenticated and quota‑checked as usual after reset
+
+Option C — via REST API (secure, programmatic):
+
+Use the built-in admin endpoint to reset monthly usage.
+
+- Method: POST
+- Path: /admin/usage/reset
+- Auth: X-Admin-Secret header must match the ADMIN_SECRET environment variable
+- Content-Type: application/json
+- Body:
+	{
+		"kid": "<API_KEY_ID>",
+		"yyyymm": "<YYYYMM>" // optional; defaults to current month in UTC
+	}
+
+Successful response (200):
+	{
+		"success": true,
+		"kid": "<API_KEY_ID>",
+		"yyyymm": "<YYYYMM>",
+		"usage": 0
+	}
+
+Errors:
+- 400 Bad Request: invalid kid, malformed yyyymm
+- 401 Unauthorized: missing/invalid X-Admin-Secret
+- 415 Unsupported Media Type: missing or wrong Content-Type
+
+Example (curl):
+	curl -X POST "$BASE_URL/admin/usage/reset" \
+		-H "X-Admin-Secret: $ADMIN_SECRET" \
+		-H "Content-Type: application/json" \
+		--data '{"kid":"abc123","yyyymm":"202508"}'
+
+Configuring ADMIN_SECRET:
+- Set a strong, random value as a Cloudflare Worker secret so it isn't committed to code.
+- Local/dev: you can use a .dev.vars file (auto-loaded by wrangler dev) with ADMIN_SECRET=... for convenience.
+- Production/staging: store as a secret via your deployment pipeline or Wrangler:
+
+	# optional examples
+	# Set secret interactively (per environment)
+	wrangler secret put ADMIN_SECRET
+
+	# Or set a local dev value (do not commit)
+	echo "ADMIN_SECRET=your-strong-secret" >> .dev.vars
+
+Rotation guidance:
+- Rotate ADMIN_SECRET periodically and after any suspected exposure.
+- After rotation, clients automating resets must update the X-Admin-Secret header.

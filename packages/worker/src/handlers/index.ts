@@ -4,3 +4,4 @@ export * from './dashboard';
 export * from './api-keys';
 export * from './og';
 export * from './static';
+export * from './admin';
