@@ -16,6 +16,7 @@ import {
 	handleHealthCheck,
 	handleAdminUsageReset,
 	handleCreateCheckoutSession,
+	handleCreatePortalSession,
 	handleStripeWebhook,
 	handleAdminReportDailyOverage
 } from '../handlers';
@@ -93,6 +94,7 @@ export function createRouter(): Router {
 
 	// Billing routes
 	router.addRoute('POST', '/billing/checkout', handleCreateCheckoutSession);
+	router.addRoute('POST', '/billing/portal', handleCreatePortalSession);
 	router.addRoute('POST', '/webhooks/stripe', handleStripeWebhook);
 
 	// Admin routes

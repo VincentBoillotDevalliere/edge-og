@@ -104,6 +104,23 @@ describe('BI-1: Billing Starter upgrade via Stripe', () => {
     expect(data.url).toContain('/dashboard');
   });
 
+  it('portal endpoint returns a URL in dev/test (BI-3)', async () => {
+    const testEnv = { ...env, ENVIRONMENT: 'test', BASE_URL: 'https://edge.test' } as any;
+
+    const req = new IncomingRequest('https://example.com/billing/portal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: 'edge_og_session=abc' },
+      body: JSON.stringify({}),
+    });
+
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(req, testEnv, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.url).toContain('/dashboard?portal=started');
+  });
+
   it('rejects webhook when STRIPE_WEBHOOK_SECRET set and signature invalid', async () => {
     const accountsStore = new Map<string, string>();
     const accountId = 'acc_sig_1';
@@ -199,5 +216,45 @@ describe('BI-1: Billing Starter upgrade via Stripe', () => {
     expect(res.status).toBe(200);
     const updated = JSON.parse(accountsStore.get(`account:${accountId}`) as string);
     expect(updated.plan).toBe('starter');
+  });
+
+  it('downgrades to free when subscription canceled event received (BI-3)', async () => {
+    const accountsStore = new Map<string, string>();
+    const accountId = 'acc_cancel_1';
+    accountsStore.set(`account:${accountId}`, JSON.stringify({ email_hash: 'h', created: new Date().toISOString(), plan: 'starter' }));
+
+    const testEnv = {
+      ...env,
+      ENVIRONMENT: 'test',
+      JWT_SECRET: 'jwt-secret-at-least-32-characters-long-xyz',
+      ACCOUNTS: {
+        get: vi.fn().mockImplementation(async (key: string, type?: string) => {
+          const raw = accountsStore.get(key) ?? null;
+          if (raw && type === 'json') return JSON.parse(raw);
+          return raw;
+        }),
+        put: vi.fn().mockImplementation(async (key: string, value: string) => {
+          accountsStore.set(key, value);
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        list: vi.fn().mockResolvedValue({ keys: [] }),
+        getWithMetadata: vi.fn().mockResolvedValue({ value: null, metadata: null }),
+      },
+      USAGE: env.USAGE,
+    } as any;
+
+    const payload = { type: 'customer.subscription.deleted', data: { object: { metadata: { account_id: accountId }, status: 'canceled' } } };
+    const req = new IncomingRequest('https://example.com/webhooks/stripe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(req, testEnv, ctx);
+    await waitOnExecutionContext(ctx);
+
+    expect(res.status).toBe(200);
+    const updated = JSON.parse(accountsStore.get(`account:${accountId}`) as string);
+    expect(updated.plan).toBe('free');
   });
 });

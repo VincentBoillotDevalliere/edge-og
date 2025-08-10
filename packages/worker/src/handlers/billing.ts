@@ -38,6 +38,38 @@ export async function handleCreateCheckoutSession(context: RequestContext): Prom
 }
 
 /**
+ * POST /billing/portal
+ * Creates a Stripe Customer Portal session for managing/canceling subscriptions (BI-3).
+ * In dev/tests, we don't call Stripe. We return a dummy URL.
+ */
+export async function handleCreatePortalSession(context: RequestContext): Promise<Response> {
+  const { request, env, requestId } = context;
+
+  // Only allow POST with JSON
+  const ct = request.headers.get('Content-Type') || '';
+  if (!ct.includes('application/json')) {
+    throw new WorkerError('Unsupported Media Type', 415, requestId);
+  }
+
+  // Require authenticated session cookie (basic check)
+  const cookie = request.headers.get('Cookie') || '';
+  if (!cookie.includes('edge_og_session=')) {
+    throw new WorkerError('Unauthorized', 401, requestId);
+  }
+
+  const isProd = (env.ENVIRONMENT || '').toLowerCase() === 'production';
+  if (isProd && (env as any).STRIPE_SECRET_KEY == null) {
+    throw new WorkerError('Billing not configured', 500, requestId);
+  }
+
+  // TODO(ai): Implement real Stripe Customer Portal session creation.
+  const url = (env.BASE_URL || 'https://edge-og.local') + '/dashboard?portal=started';
+
+  log({ event: 'billing_portal_created', request_id: requestId });
+  return Response.json({ url }, { status: 200 });
+}
+
+/**
  * POST /webhooks/stripe
  * Receives Stripe events. On invoice.paid for Starter subscription, set plan=starter.
  * We verify with a shared secret when provided; else accept in tests/dev.
@@ -92,11 +124,15 @@ export async function handleStripeWebhook(context: RequestContext): Promise<Resp
     return Response.json({ received: true }, { status: 200 });
   }
 
-  // Handle the event types relevant to upgrade
+  // Handle the event types relevant to upgrade/cancel
   if (eventType === 'invoice.paid' || eventType === 'checkout.session.completed' || eventType === 'customer.subscription.created') {
     // Set plan to starter
     await updateAccountPlan(accountId, 'starter', env);
     log({ event: 'stripe_upgrade_starter', account_id: accountId, request_id: requestId });
+  } else if (eventType === 'customer.subscription.deleted' || (eventType === 'customer.subscription.updated' && (body.data?.object?.status === 'canceled' || body.data?.object?.cancel_at_period_end === true))) {
+    // Downgrade immediately on cancellation events (BI-3 real-time status)
+    await updateAccountPlan(accountId, 'free', env);
+    log({ event: 'stripe_subscription_canceled', account_id: accountId, status: body.data?.object?.status, request_id: requestId });
   } else {
     log({ event: 'stripe_event_ignored', type: eventType, request_id: requestId });
   }
