@@ -14,7 +14,9 @@ import {
 	handleOGMethodNotAllowed,
 	handleHomepage,
 	handleHealthCheck,
-	handleAdminUsageReset
+	handleAdminUsageReset,
+	handleCreateCheckoutSession,
+	handleStripeWebhook
 } from '../handlers';
 
 /**
@@ -87,6 +89,10 @@ export function createRouter(): Router {
 	// Static routes
 	router.addRoute('GET', '/', handleHomepage);
 	router.addRoute('GET', '/health', handleHealthCheck);
+
+	// Billing routes
+	router.addRoute('POST', '/billing/checkout', handleCreateCheckoutSession);
+	router.addRoute('POST', '/webhooks/stripe', handleStripeWebhook);
 
 	// Admin routes
 	router.addRoute('POST', '/admin/usage/reset', handleAdminUsageReset);

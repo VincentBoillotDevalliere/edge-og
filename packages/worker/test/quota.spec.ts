@@ -180,11 +180,11 @@ describe('AQ-3.3: Paid plan quotas (limits by plan)', () => {
     const { kid, fullKey, hash } = await generateAPIKey(accountId, 'Starter Quota Key', testEnv);
     await storeAPIKey(kid, accountId, hash, 'Starter Quota Key', testEnv);
 
-    // Pre-seed usage to one below limit (starter=1000)
+  // Pre-seed usage to one below limit (starter=2,000,000 per BI-1)
     const key = `usage:${kid}:${getCurrentYYYYMM()}`;
-    usageStore.set(key, JSON.stringify({ count: 999 }));
+  usageStore.set(key, JSON.stringify({ count: 1_999_999 }));
 
-    // First request should hit exactly the limit (1000) and be allowed
+  // First request should hit exactly the limit (2,000,000) and be allowed
     const req1 = new IncomingRequest('https://example.com/og?title=Starter1', {
       headers: { Authorization: `Bearer ${fullKey}` },
     });
@@ -193,7 +193,7 @@ describe('AQ-3.3: Paid plan quotas (limits by plan)', () => {
     await waitOnExecutionContext(ctx1);
     expect(res1.status).toBe(200);
 
-    // Second request should exceed (count=1001) and return 429
+  // Second request should exceed (count=2,000,001) and return 429
     const req2 = new IncomingRequest('https://example.com/og?title=Starter2', {
       headers: { Authorization: `Bearer ${fullKey}` },
     });
@@ -202,8 +202,8 @@ describe('AQ-3.3: Paid plan quotas (limits by plan)', () => {
     await waitOnExecutionContext(ctx2);
     expect(res2.status).toBe(429);
     const data2 = await res2.json() as any;
-    expect(data2.limit).toBe(1000);
-    expect(data2.usage).toBeGreaterThan(1000);
+  expect(data2.limit).toBe(2_000_000);
+  expect(data2.usage).toBeGreaterThan(2_000_000);
   });
 
   it('pro plan: blocks when usage already at limit', async () => {
