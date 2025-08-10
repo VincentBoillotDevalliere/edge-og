@@ -5,6 +5,7 @@ import { TemplateType } from '../templates';
 import { renderOpenGraphImage } from '../render';
 import { verifyAPIKey } from '../utils/auth';
 import { checkAndIncrementQuota } from '../utils/quota';
+import { incrementDailyOverage } from '../kv/overage';
 import { 
 	getCacheStatus, 
 	generateETag, 
@@ -62,21 +63,34 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 
 		const quota = await checkAndIncrementQuota(auth.kid, env, requestId, plan, ip);
 		if (!quota.allowed) {
-			// AQ-4.1: Ensure refusal is logged (redundant with utils.quota but safe)
-			log({ event: 'quota_refused', kid: auth.kid, ip, plan, current: quota.current, limit: quota.limit, request_id: requestId });
-			return new Response(
-				JSON.stringify({
-					error: 'Monthly quota exceeded for current plan.',
-					plan,
-					limit: quota.limit,
-					usage: quota.current,
-					request_id: requestId,
-				}),
-				{
-					status: 429,
-					headers: { 'Content-Type': 'application/json', 'Retry-After': '2592000' }, // ~30 days
+			// BI-2: Paid plans switch to pay-as-you-go overage instead of hard block
+			if (plan && plan !== 'free') {
+				// Map kid -> accountId by reading API_KEYS when needed would be extra cost; we already have accountId from auth
+				// Record one overage unit for the owning account for J+1 metered billing
+				try {
+					await incrementDailyOverage(env, auth.accountId);
+					log({ event: 'overage_recorded', kid: auth.kid, account_id: auth.accountId, plan, current: quota.current, limit: quota.limit, request_id: requestId });
+				} catch (e) {
+					log({ event: 'overage_record_failed', kid: auth.kid, account_id: auth.accountId, error: e instanceof Error ? e.message : String(e), request_id: requestId });
 				}
-			);
+				// Continue processing the request (no 429)
+			} else {
+				// Free plan: still enforce hard limit per AQ-3.1
+				log({ event: 'quota_refused', kid: auth.kid, ip, plan, current: quota.current, limit: quota.limit, request_id: requestId });
+				return new Response(
+					JSON.stringify({
+						error: 'Monthly quota exceeded for current plan.',
+						plan,
+						limit: quota.limit,
+						usage: quota.current,
+						request_id: requestId,
+					}),
+					{
+						status: 429,
+						headers: { 'Content-Type': 'application/json', 'Retry-After': '2592000' }, // ~30 days
+					}
+				);
+			}
 		}
 	}
 

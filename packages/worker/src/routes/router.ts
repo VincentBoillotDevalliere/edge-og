@@ -16,7 +16,8 @@ import {
 	handleHealthCheck,
 	handleAdminUsageReset,
 	handleCreateCheckoutSession,
-	handleStripeWebhook
+	handleStripeWebhook,
+	handleAdminReportDailyOverage
 } from '../handlers';
 
 /**
@@ -96,6 +97,7 @@ export function createRouter(): Router {
 
 	// Admin routes
 	router.addRoute('POST', '/admin/usage/reset', handleAdminUsageReset);
+	router.addRoute('POST', '/admin/billing/report-daily', handleAdminReportDailyOverage);
 
 	return router;
 }

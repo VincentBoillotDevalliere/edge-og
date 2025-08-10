@@ -155,8 +155,17 @@ function encodeBase62(bytes: Uint8Array): string {
 		bigInt = bigInt / 62n;
 	}
 	
-	// Ensure minimum length by padding with zeros
+	// Return result (or '0' if zero)
 	return result || '0';
+}
+
+/**
+ * Left-pad a base62 string to a minimum length using '0' characters.
+ * This preserves an opaque fixed-length representation for secrets.
+ */
+function padBase62(input: string, minLength: number): string {
+    if (input.length >= minLength) return input;
+    return input.padStart(minLength, BASE62_ALPHABET[0]);
 }
 
 /**
@@ -793,7 +802,9 @@ export async function generateAPIKey(
 	// Generate 32 bytes for the secret part (≥ 256-bit entropy per AQ-5.2)
 	const secretBytes = new Uint8Array(32); // 32 bytes for secret
 	crypto.getRandomValues(secretBytes);
-	const secret = encodeBase62(secretBytes);
+	let secret = encodeBase62(secretBytes);
+	// Ensure fixed minimum length for 32-byte secrets (ceil(256 / log2(62)) = 43)
+	secret = padBase62(secret, 43);
 	
 	// Combine prefix and secret to create the full key (targeting 64 chars total)
 	const prefix = `eog_${kid}`;
