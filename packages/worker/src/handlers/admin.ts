@@ -3,6 +3,8 @@ export {};
 import { RequestContext } from '../types/request';
 import { WorkerError } from '../utils/error';
 import { resetMonthlyQuota, getMonthlyUsage } from '../kv/usage';
+import { getCurrentYYYYMMDD, isDateReported, listOverageForDate, markDateReported } from '../kv/overage';
+import { log } from '../utils/logger';
 
 /**
  * Validate YYYYMM format (e.g., 202501)
@@ -91,4 +93,57 @@ export async function handleAdminUsageReset(context: RequestContext): Promise<Re
     JSON.stringify({ success: true, kid, yyyymm: body.yyyymm, usage }),
     { status: 200, headers: { 'Content-Type': 'application/json' } }
   );
+}
+
+/**
+ * Admin: Report previous day's overage (BI-2 J+1 metered)
+ * Route: POST /admin/billing/report-daily
+ * Auth: X-Admin-Secret
+ * Behavior: Aggregates overage:{account}:{YYYYMMDD} for yesterday, logs totals and marks reported.
+ * If STRIPE_METER_PRICE_ID is set, would report usage to Stripe (stubbed with logs here).
+ */
+export async function handleAdminReportDailyOverage(context: RequestContext): Promise<Response> {
+  const { request, env, requestId } = context;
+
+  const provided = request.headers.get('X-Admin-Secret') || '';
+  const expected = (env.ADMIN_SECRET as string) || '';
+  if (!expected || !provided || !constantTimeEqual(provided, expected)) {
+    throw new WorkerError('Unauthorized', 401, requestId);
+  }
+
+  // Determine yesterday in UTC
+  const now = new Date();
+  const yday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
+  const yyyymmdd = getCurrentYYYYMMDD(yday);
+
+  // Avoid double-reporting
+  if (await isDateReported(env, yyyymmdd)) {
+    return new Response(JSON.stringify({ ok: true, already_reported: true, date: yyyymmdd }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  const map = await listOverageForDate(env, yyyymmdd);
+  const price = 0.30; // € per 100k
+
+  const lineItems = Object.entries(map).map(([accountId, count]) => {
+    const units100k = Math.ceil(count / 100_000);
+    const amount = units100k * price;
+    return { account_id: accountId, overage: count, units_100k: units100k, amount_eur: amount };
+  });
+
+  // Optional: Stripe metered usage integration (stub for now)
+  if ((env as any).STRIPE_SECRET_KEY && (env as any).STRIPE_METER_PRICE_ID) {
+    log({ event: 'overage_report_stripe_stub', date: yyyymmdd, items: lineItems.length, request_id: requestId });
+    // TODO(ai): Implement Stripe usage record creations per subscription item
+  }
+
+  // Log a summary for observability
+  log({ event: 'overage_report_generated', date: yyyymmdd, accounts: lineItems.length, request_id: requestId });
+
+  await markDateReported(env, yyyymmdd);
+
+  return new Response(JSON.stringify({ ok: true, date: yyyymmdd, items: lineItems }), {
+    status: 200, headers: { 'Content-Type': 'application/json' }
+  });
 }

@@ -120,7 +120,7 @@ describe('AQ-3.3: Paid plan quotas (limits by plan)', () => {
     vi.restoreAllMocks();
   });
 
-  it('starter plan: allows up to limit and blocks after', async () => {
+  it('starter plan: allows up to limit and continues with overage', async () => {
     const accountId = 'acc_starter_1';
 
     // In-memory KV stubs
@@ -193,20 +193,17 @@ describe('AQ-3.3: Paid plan quotas (limits by plan)', () => {
     await waitOnExecutionContext(ctx1);
     expect(res1.status).toBe(200);
 
-  // Second request should exceed (count=2,000,001) and return 429
+  // Second request should exceed (count=2,000,001) and be allowed (overage)
     const req2 = new IncomingRequest('https://example.com/og?title=Starter2', {
       headers: { Authorization: `Bearer ${fullKey}` },
     });
     const ctx2 = createExecutionContext();
     const res2 = await worker.fetch(req2, testEnv, ctx2);
     await waitOnExecutionContext(ctx2);
-    expect(res2.status).toBe(429);
-    const data2 = await res2.json() as any;
-  expect(data2.limit).toBe(2_000_000);
-  expect(data2.usage).toBeGreaterThan(2_000_000);
+    expect(res2.status).toBe(200);
   });
 
-  it('pro plan: blocks when usage already at limit', async () => {
+  it('pro plan: allows overage when usage already at limit', async () => {
     const accountId = 'acc_pro_1';
 
     // In-memory KV stubs
@@ -270,7 +267,7 @@ describe('AQ-3.3: Paid plan quotas (limits by plan)', () => {
     const key = `usage:${kid}:${getCurrentYYYYMM()}`;
     usageStore.set(key, JSON.stringify({ count: 10000 }));
 
-    // Next request should exceed and 429
+  // Next request should exceed and be allowed (overage)
     const req = new IncomingRequest('https://example.com/og?title=Pro', {
       headers: { Authorization: `Bearer ${fullKey}` },
     });
@@ -278,10 +275,7 @@ describe('AQ-3.3: Paid plan quotas (limits by plan)', () => {
     const res = await worker.fetch(req, testEnv, ctx);
     await waitOnExecutionContext(ctx);
 
-    expect(res.status).toBe(429);
-    const data = await res.json() as any;
-    expect(data.limit).toBe(10000);
-    expect(data.usage).toBeGreaterThan(10000);
+  expect(res.status).toBe(200);
   });
 });
 
