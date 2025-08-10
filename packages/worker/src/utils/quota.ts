@@ -34,7 +34,7 @@ export function getCurrentYYYYMM(date = new Date()): string {
  */
 export function getPlanLimit(plan: string | undefined): number {
   if (!plan || plan === 'free') return 1;
-  if (plan === 'starter') return 1000; // placeholder for AQ-3.3 future
+  if (plan === 'starter') return 2_000_000; // BI-1: Starter plan quota 2M
   if (plan === 'pro') return 10000; // placeholder
   return 1;
 }

@@ -417,6 +417,31 @@ export async function updateAccountLastLogin(
 }
 
 /**
+ * Update account plan and persist in KV (BI-1)
+ */
+export async function updateAccountPlan(
+	accountId: string,
+	plan: AccountData['plan'],
+	env: Env
+): Promise<void> {
+	try {
+		const key = `account:${accountId}`;
+		const existing = await env.ACCOUNTS.get(key, 'json') as AccountData | null;
+		if (!existing) {
+			throw new WorkerError('Account not found', 404);
+		}
+		existing.plan = plan;
+		await env.ACCOUNTS.put(key, JSON.stringify(existing), {
+			metadata: { updated_at: Date.now(), plan },
+		});
+		log({ event: 'account_plan_updated', account_id: accountId, plan });
+	} catch (error) {
+		log({ event: 'account_plan_update_failed', account_id: accountId, error: error instanceof Error ? error.message : 'Unknown error' });
+		throw error;
+	}
+}
+
+/**
  * Create account in KV storage
  * Implements KV schema: account:{UUID} → { email_hash, created, plan }
  */
