@@ -1,0 +1,40 @@
+{
+  "name": "@edge-og/sdk",
+  "version": "0.1.0",
+  "description": "Official Edge-OG JavaScript/TypeScript SDK for generating Open Graph images in one line.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "test": "vitest run --coverage",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "edge-og",
+    "og",
+    "opengraph",
+    "sdk",
+    "cloudflare"
+  ],
+  "author": "Edge-OG",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.6.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.5.4",
+    "vitest": "^3.2.4"
+  }
+}

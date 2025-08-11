@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "pnpm -C packages/sdk test",
     "build:cf": "next-on-pages build",
     "deploy:cf": "wrangler pages deploy .vercel/output/static --project-name=edge-og-dashboard"
   
