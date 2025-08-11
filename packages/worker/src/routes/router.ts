@@ -7,6 +7,7 @@ import {
 	handleMagicLinkCallback,
 		handleLogout,
 	handleDashboard,
+	handleDashboardUsage,
 	handleAPIKeyGeneration,
 	handleAPIKeyListing,
 	handleAPIKeyRevocation,
@@ -82,6 +83,7 @@ export function createRouter(): Router {
 
 	// Dashboard routes
 	router.addRoute('GET', '/dashboard', handleDashboard);
+	router.addRoute('GET', '/dashboard/usage', handleDashboardUsage);
 	router.addRoute('GET', '/dashboard/api-keys', handleAPIKeyListing);
 	router.addRoute('POST', '/dashboard/api-keys', handleAPIKeyGeneration);
 

@@ -5,6 +5,7 @@ import {
 	verifyJWTToken,
 	SessionPayload,
 } from '../utils/auth';
+import { getPlanLimit, getCurrentYYYYMM } from '../utils/quota';
 
 /**
  * Handle dashboard access for authenticated users
@@ -98,6 +99,109 @@ export async function handleDashboard(context: RequestContext): Promise<Response
 				headers: { 'Content-Type': 'application/json' },
 			}
 		);
+	}
+}
+
+/**
+ * Handle usage retrieval for authenticated users (DB-1.1)
+ * GET /dashboard/usage -> { used, limit, resetAt }
+ * - Reads monthly usage aggregated across all API keys for the account
+ * - Returns 401 if not authenticated
+ */
+export async function handleDashboardUsage(context: RequestContext): Promise<Response> {
+	const { request, env, requestId } = context;
+	try {
+		// Ensure auth env
+		validateAuthEnvironment(env, requestId);
+
+		// Extract and verify session cookie
+		const sessionToken = extractSessionTokenFromCookies(request);
+		if (!sessionToken) {
+			return new Response(JSON.stringify({ error: 'Unauthorized', request_id: requestId }), {
+				status: 401,
+				headers: { 'Content-Type': 'application/json' }
+			});
+		}
+
+		const payload = await verifyJWTToken<SessionPayload>(sessionToken, env.JWT_SECRET as string);
+		if (!payload) {
+			return new Response(JSON.stringify({ error: 'Unauthorized', request_id: requestId }), {
+				status: 401,
+				headers: { 'Content-Type': 'application/json' }
+			});
+		}
+
+		const accountId = payload.account_id;
+
+		// Load account to determine plan
+		const accountKey = `account:${accountId}`;
+		const accountDataRaw = await env.ACCOUNTS.get(accountKey);
+		if (!accountDataRaw) {
+			// Treat missing account as unauthorized to avoid leaking existence
+			return new Response(JSON.stringify({ error: 'Unauthorized', request_id: requestId }), {
+				status: 401,
+				headers: { 'Content-Type': 'application/json' }
+			});
+		}
+
+		let plan: string = 'free';
+		try {
+			const acc = JSON.parse(accountDataRaw) as { plan?: string };
+			plan = acc.plan || 'free';
+		} catch {}
+
+		const limit = getPlanLimit(plan);
+
+		// Aggregate monthly usage across all kids for this account
+		const yyyymm = getCurrentYYYYMM();
+		let used = 0;
+
+		try {
+			// List keys and filter by account via metadata
+			const listResult = await env.API_KEYS.list({ prefix: 'key:' });
+			const keysForAccount = listResult.keys.filter(k => {
+				const md = k.metadata as { account?: string } | undefined;
+				return md && md.account === accountId;
+			});
+
+			// For each key, read usage:{kid}:{YYYYMM}
+			for (const key of keysForAccount) {
+				const kid = key.name.substring(4); // strip 'key:'
+				const usageKey = `usage:${kid}:${yyyymm}`;
+				const raw = await env.USAGE.get(usageKey, 'json') as { count?: number } | number | null;
+				if (raw == null) continue;
+				if (typeof raw === 'number') {
+					used += raw;
+				} else if (typeof raw.count === 'number') {
+					used += raw.count;
+				}
+			}
+		} catch (e) {
+			// If listing fails, log and continue with used=0 to avoid breaking dashboard
+			log({ event: 'dashboard_usage_list_failed', error: e instanceof Error ? e.message : String(e), account_id: accountId, request_id: requestId });
+		}
+
+		// Compute resetAt = first day of next month UTC 00:00:00.000
+		const now = new Date();
+		const resetAtDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+		const resetAt = resetAtDate.toISOString();
+
+		// Log success
+		log({ event: 'dashboard_usage_success', account_id: accountId, used, limit, reset_at: resetAt, request_id: requestId });
+
+		return new Response(JSON.stringify({ used, limit, resetAt }), {
+			status: 200,
+			headers: {
+				'Content-Type': 'application/json',
+				'Cache-Control': 'private, no-cache, no-store, must-revalidate'
+			}
+		});
+	} catch (error) {
+		log({ event: 'dashboard_usage_error', status: 500, request_id: requestId, error: error instanceof Error ? error.message : 'Unknown error' });
+		return new Response(JSON.stringify({ error: 'Failed to fetch usage', request_id: requestId }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json' }
+		});
 	}
 }
 

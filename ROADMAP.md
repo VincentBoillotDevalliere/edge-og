@@ -121,9 +121,21 @@ Note: AQ‑4.1 implémenté — voir `docs/AQ-4.1-IMPLEMENTATION.md` (logs JSON 
 
 | ID | User Story | Critères d’acceptation | Priorité |
 |----|-----------|------------------------|----------|
-| **DB‑1** | L’utilisateur visualise quota consommé + reset date | Graph barre + refresh < 1 min | **Must** |
-| DB‑2 | CRUD templates depuis l’UI | Opérations via API Worker, persistance KV | Should |
-| DB‑3 | A/B test entre 2 templates | Flag `exp=a|b` + stats CTR visibles | Could |
+| **DB‑1.1** | En tant qu’utilisateur, je récupère mes quotas via l’API | • GET `/dashboard/usage` renvoie `{ used, limit, resetAt }`.<br>• Lecture KV `USAGE` (clé `usage:{account|kid}:{YYYYMM}`).<br>• 401 si non authentifié. | **Must** |
+| **DB‑1.2** | Je vois un widget « Consommation » clair | • Barre proportionnelle `used/limit` + texte `X/Y`.<br>• Affiche « Reset le 1ᵉʳ du mois (UTC) ».<br>• Auto‑refresh ≤ 60 s. | **Must** |
+| DB‑1.3 | L’UI gère chargement et erreurs proprement | • Skeleton visible ≥ 300 ms.<br>• Message d’erreur générique, bouton « Réessayer ».<br>• Log JSON `{event:"dashboard_usage_error", status, request_id}`. | Should |
+| DB‑1.4 | Des seuils visuels m’alertent | • Badge orange si > 80 %, rouge si > 95 %.<br>• Accessible (aria‑labels). | Should |
+| DB‑2.1 | Je liste mes templates dans l’UI | • GET `/templates` retourne `[ { id, name, slug, updatedAt, published } ]`.<br>• Table tri par nom/date, recherche par nom. | Should |
+| DB‑2.2 | Je crée un template depuis un formulaire | • POST `/templates` avec `{ name, slug, source }` valide (tailles, XSS).<br>• Persistance KV `template:{id}` `{ account, name, slug, source, version=1, createdAt, updatedAt, published=false }`. | Should |
+| DB‑2.3 | Je prévisualise un template | • Bouton « Preview » ouvre `/og?templateId=...` (taille preview).<br>• Cache‑Control 1 an côté Worker. | Should |
+| DB‑2.4 | Je modifie un template avec versionnage | • PUT `/templates/{id}` met à jour `source`, `version++`, `updatedAt`.<br>• Historique min. des 5 dernières versions en KV (`template_rev:{id}:{version}`). | Should |
+| DB‑2.5 | Je publie/dépublie un template | • PATCH `/templates/{id}` `published=true|false`.<br>• Le Worker ne sert que les `published=true` par défaut (hors mode preview). | Should |
+| DB‑2.6 | Je supprime un template en sécurité | • Soft‑delete: `deletedAt` non‑nul, masqué par défaut dans l’UI.<br>• Option « Restaurer ». | Could |
+| DB‑2.7 | Les accès sont protégés | • 401 si non connecté, 403 si template d’un autre compte.<br>• Logs `{event:"dashboard_templates_access_denied"}`. | Must |
+| DB‑3.1 | Je crée une expérience A/B entre 2 templates | • POST `/experiments` `{ name, templateA, templateB, split=50 }` → `experiment:{id}` en KV.<br>• `status=active|paused`. | Could |
+| DB‑3.2 | Le routage de variante est déterministe | • Sans param, assignation sticky par hash `(accountId+resource)` selon `split`.<br>• Param `exp=a|b` force la variante. | Could |
+| DB‑3.3 | Je vois les stats CTR par variante | • Comptage `impressions` (renders) et `clicks` (endpoint redirect).<br>• UI affiche `impressionsA/B`, `clicksA/B`, `CTR%` sur 24 h et 7 j, refresh ≤ 60 s. | Could |
+| DB‑3.4 | Je peux mettre en pause / clôturer une expérience | • PATCH `status` `active|paused|archived`.<br>• Fallback configurable vers le gagnant. | Could |
 
 ### 7. Observability & Alerting
 
