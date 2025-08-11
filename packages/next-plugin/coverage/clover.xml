@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<coverage generated="1754896981722" clover="3.2.0">
+  <project timestamp="1754896981722" name="All files">
+    <metrics statements="28" coveredstatements="28" conditionals="5" coveredconditionals="4" methods="2" coveredmethods="2" elements="35" coveredelements="34" complexity="0" loc="28" ncloc="28" packages="1" files="1" classes="1"/>
+    <file name="index.ts" path="/Users/vincentboillotdevalliere/Documents/edge-og/packages/next-plugin/src/index.ts">
+      <metrics statements="28" coveredstatements="28" conditionals="5" coveredconditionals="4" methods="2" coveredmethods="2"/>
+      <line num="20" count="1" type="cond" truecount="1" falsecount="0"/>
+      <line num="21" count="4" type="stmt"/>
+      <line num="25" count="4" type="cond" truecount="1" falsecount="0"/>
+      <line num="26" count="4" type="cond" truecount="1" falsecount="0"/>
+      <line num="27" count="3" type="stmt"/>
+      <line num="28" count="3" type="stmt"/>
+      <line num="29" count="4" type="stmt"/>
+      <line num="32" count="4" type="stmt"/>
+      <line num="33" count="4" type="cond" truecount="1" falsecount="0"/>
+      <line num="34" count="1" type="cond" truecount="0" falsecount="1"/>
+      <line num="35" count="1" type="stmt"/>
+      <line num="36" count="1" type="stmt"/>
+      <line num="37" count="1" type="stmt"/>
+      <line num="38" count="1" type="stmt"/>
+      <line num="39" count="1" type="stmt"/>
+      <line num="40" count="1" type="stmt"/>
+      <line num="41" count="1" type="stmt"/>
+      <line num="42" count="1" type="stmt"/>
+      <line num="43" count="1" type="stmt"/>
+      <line num="44" count="1" type="stmt"/>
+      <line num="47" count="4" type="stmt"/>
+      <line num="48" count="4" type="stmt"/>
+      <line num="49" count="4" type="stmt"/>
+      <line num="50" count="4" type="stmt"/>
+      <line num="51" count="4" type="stmt"/>
+      <line num="52" count="4" type="stmt"/>
+      <line num="54" count="4" type="stmt"/>
+      <line num="55" count="4" type="stmt"/>
+    </file>
+  </project>
+</coverage>

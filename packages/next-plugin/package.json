@@ -1,0 +1,35 @@
+{
+  "name": "@edge-og/next-plugin",
+  "version": "0.1.0",
+  "description": "Next.js plugin to auto-generate Open Graph images for MDX pages using Edge-OG.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "test": "vitest run --coverage",
+    "lint": "eslint ."
+  },
+  "peerDependencies": {
+    "next": ">=13 <16"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.6.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.5.4",
+    "vitest": "^3.2.4"
+  },
+  "keywords": ["nextjs", "plugin", "opengraph", "og", "edge-og"],
+  "author": "Edge-OG",
+  "license": "MIT"
+}
