@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "pnpm -C packages/sdk test && pnpm -C packages/worker test:unit && pnpm -C packages/next-plugin test",
+  "test": "pnpm -C packages/sdk test && pnpm -C packages/worker test:unit && pnpm -C packages/next-plugin test && pnpm -C packages/cli test",
     "build:cf": "next-on-pages build",
     "deploy:cf": "wrangler pages deploy .vercel/output/static --project-name=edge-og-dashboard"
   
