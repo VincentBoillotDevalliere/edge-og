@@ -83,6 +83,7 @@ function getRouteNameFromPath(pathname: string): string {
 	if (pathname === '/health') return 'health_check';
 	if (pathname === '/og') return 'og_image_generated';
 	if (pathname === '/dashboard') return 'dashboard_accessed';
+	if (pathname === '/dashboard/usage') return 'dashboard_usage';
 	if (pathname === '/auth/request-link') return 'magic_link_requested';
 	if (pathname === '/auth/callback') return 'magic_link_callback';
 	if (pathname === '/dashboard/api-keys') return 'api_key_generated';
