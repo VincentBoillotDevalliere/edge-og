@@ -1,0 +1,47 @@
+{
+  "name": "@edge-og/cli",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Edge-OG CLI to preview OG images locally without an account.",
+  "type": "module",
+  "bin": {
+    "edge-og": "dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "dev": "tsx src/bin.ts",
+  "test": "vitest run --coverage",
+    "lint": "eslint ."
+  },
+  "keywords": ["edge-og", "cli", "opengraph", "satori", "resvg"],
+  "author": "Edge-OG",
+  "license": "MIT",
+  "dependencies": {
+    "@resvg/resvg-wasm": "^2.6.2",
+    "satori": "^0.16.1",
+    "yargs": "^17.7.2",
+    "yargs-parser": "^21.1.1",
+    "open": "^10.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.6.0",
+    "rimraf": "^5.0.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.4",
+    "vitest": "^3.2.4"
+  }
+}
