@@ -110,15 +110,44 @@ export default function UsageWidget() {
     return clamp(data.used / data.limit) * 100;
   }, [data]);
 
+  const severity = useMemo<"normal" | "high" | "critical">(() => {
+    if (pct > 95) return "critical";
+    if (pct > 80) return "high";
+    return "normal";
+  }, [pct]);
+
+  const badge = useMemo(() => {
+    if (!data) return null;
+    if (severity === "normal") return null;
+    const pctLabel = Math.round(pct);
+    const isCritical = severity === "critical";
+    const bg = isCritical ? "bg-[#ef4444]" : "bg-[#f59e0b]"; // red-500 / amber-500
+    const text = isCritical ? "Critique" : "Élevé";
+    const aria = `Alerte consommation ${isCritical ? "critique" : "élevée"}: ${pctLabel}%`;
+    return (
+      <span
+        role="status"
+        aria-live="polite"
+        aria-label={aria}
+        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] sm:text-xs font-medium text-white ${bg}`}
+      >
+        {text}
+      </span>
+    );
+  }, [data, pct, severity]);
+
   return (
     <section
       aria-label="Consommation"
       className="w-full max-w-xl rounded-2xl border border-black/10 dark:border-white/15 p-5 sm:p-6 shadow-sm bg-white dark:bg-black"
     >
-      <header className="mb-4 flex items-center justify-between">
-        <h2 className="text-base sm:text-lg font-semibold">Consommation</h2>
+      <header className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 className="text-base sm:text-lg font-semibold">Consommation</h2>
+          {badge}
+        </div>
         {data && (
-          <span className="text-xs sm:text-sm text-black/60 dark:text-white/60">
+          <span className="text-xs sm:text-sm text-black/60 dark:text-white/60 whitespace-nowrap">
             {new Intl.NumberFormat().format(data.used)} / {new Intl.NumberFormat().format(data.limit)}
           </span>
         )}
