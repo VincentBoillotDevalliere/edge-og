@@ -103,4 +103,58 @@ describe('UsageWidget', () => {
       expect(screen.getAllByText(/2\s*\/\s*10/).length).toBeGreaterThan(0);
     });
   });
+
+  it('shows no badge when usage <= 80%', async () => {
+    (fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ used: 80, limit: 100, resetAt: new Date().toISOString() }),
+      text: async () => '',
+    });
+
+    render(<UsageWidget />);
+
+    vi.advanceTimersByTime(300);
+    await waitFor(() => {
+      expect(screen.getByRole('progressbar')).toBeInTheDocument();
+      // No status badge should be present
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+  });
+
+  it('shows orange badge when usage > 80% and <= 95%', async () => {
+    (fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ used: 81, limit: 100, resetAt: new Date().toISOString() }),
+      text: async () => '',
+    });
+
+    render(<UsageWidget />);
+    vi.advanceTimersByTime(300);
+
+    await waitFor(() => {
+      const badge = screen.getByRole('status');
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveAccessibleName(/Alerte consommation élevée/i);
+      // Progressbar value should be around 81
+      const progress = screen.getByRole('progressbar');
+      expect(progress).toHaveAttribute('aria-valuenow', expect.stringMatching(/8\d/));
+    });
+  });
+
+  it('shows red badge when usage > 95%', async () => {
+    (fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ used: 96, limit: 100, resetAt: new Date().toISOString() }),
+      text: async () => '',
+    });
+
+    render(<UsageWidget />);
+    vi.advanceTimersByTime(300);
+
+    await waitFor(() => {
+      const badge = screen.getByRole('status');
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveAccessibleName(/Alerte consommation critique/i);
+    });
+  });
 });
