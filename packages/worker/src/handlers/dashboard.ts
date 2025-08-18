@@ -114,10 +114,32 @@ export async function handleDashboardUsage(context: RequestContext): Promise<Res
 		// Ensure auth env
 		validateAuthEnvironment(env, requestId);
 
-		// Strictly require authentication
+		// Require authentication by default, but allow explicit dev stub when enabled
 		const sessionToken = extractSessionTokenFromCookies(request);
 		const payload = sessionToken ? await verifyJWTToken<SessionPayload>(sessionToken, env.JWT_SECRET as string) : null;
 		if (!payload) {
+			const devFlag = (env as any).DEV_ALLOW_DASHBOARD_USAGE as string | undefined;
+			const allowDevStub = devFlag === 'true' || devFlag === '1';
+			if (allowDevStub) {
+				// Compute resetAt = first day of next month UTC 00:00:00.000
+				const now = new Date();
+				const resetAtDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+				const resetAt = resetAtDate.toISOString();
+
+				const origin = request.headers.get('Origin') || '';
+				const corsHeaders: Record<string, string> = {};
+				if (origin.startsWith('http://localhost:3000')) {
+					corsHeaders['Access-Control-Allow-Origin'] = origin;
+					corsHeaders['Vary'] = 'Origin';
+					corsHeaders['Access-Control-Allow-Credentials'] = 'true';
+				}
+
+				log({ event: 'dashboard_usage_dev_stub', request_id: requestId });
+				return new Response(JSON.stringify({ used: 0, limit: 1000, resetAt }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-cache, no-store, must-revalidate', ...corsHeaders }
+				});
+			}
 			return new Response(JSON.stringify({ error: 'Unauthorized', request_id: requestId }), {
 				status: 401,
 				headers: { 'Content-Type': 'application/json' }
@@ -151,8 +173,8 @@ export async function handleDashboardUsage(context: RequestContext): Promise<Res
 
 		try {
 			// List keys and filter by account via metadata
-			const listResult = await env.API_KEYS.list({ prefix: 'key:' });
-			const keysForAccount = listResult.keys.filter(k => {
+			const listResult = await (env as any).API_KEYS.list({ prefix: 'key:' });
+			const keysForAccount = listResult.keys.filter((k: any) => {
 				const md = k.metadata as { account?: string } | undefined;
 				return md && md.account === accountId;
 			});
@@ -404,6 +426,14 @@ function getDashboardHTML(accountId: string, plan: string, baseUrl: string): str
 				<h2>Welcome back!</h2>
 				<div class="plan-badge">${plan} Plan</div>
 			</div>
+
+			<div class="api-section" id="templatesSection">
+				<h3>📝 Templates</h3>
+				<p>Preview any of your saved templates directly. Click Preview to open <code>/og?templateId=...</code> in a new tab.</p>
+				<div id="templatesContainer" style="margin-top: 16px;">
+					<div class="feature-card">Loading templates…</div>
+				</div>
+			</div>
 			
 			<div class="api-section">
 				<h3>🚀 Quick Start</h3>
@@ -543,6 +573,68 @@ ${baseUrl}/og?title=Tech%20Conference%202025&description=Join%20industry%20leade
 	
 	<script>
 		let generatedApiKey = '';
+
+		// Load and render templates list with Preview links (DB-2.3 UI wiring)
+		async function loadTemplates() {
+			const container = document.getElementById('templatesContainer');
+			if (!container) return;
+			try {
+				const res = await fetch('/templates', { credentials: 'include' });
+				if (!res.ok) {
+					container.innerHTML = '<div class="feature-card">Failed to load templates.</div>';
+					return;
+				}
+				const data = await res.json();
+				const items = (data && Array.isArray(data.templates)) ? data.templates : [];
+				if (items.length === 0) {
+					container.innerHTML = '<div class="feature-card">No templates yet. Use the API to create one, then preview it here.</div>';
+					return;
+				}
+
+				const rows = items.map(t => {
+					var updated = t.updatedAt ? new Date(t.updatedAt).toLocaleString() : '-';
+					var previewUrl = '/og?templateId=' + encodeURIComponent(t.id) + '&title=' + encodeURIComponent(t.name || 'Preview');
+					return (
+						'<tr>' +
+						'\t<td style="padding: 8px 12px;">' + (t.name || '-') + '</td>' +
+						'\t<td style="padding: 8px 12px; color: #555;">' + (t.slug || '-') + '</td>' +
+						'\t<td style="padding: 8px 12px; color: #777;">' + updated + '</td>' +
+						'\t<td style="padding: 8px 12px; text-align: right;">' +
+						'\t\t<a class="btn" href="' + previewUrl + '" target="_blank" rel="noopener noreferrer">Preview</a>' +
+						'\t</td>' +
+						'</tr>'
+					);
+				}).join('');
+
+				container.innerHTML =
+					'<div style="overflow-x: auto; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">' +
+					'\t<table style="width: 100%; border-collapse: collapse; min-width: 560px;">' +
+					'\t\t<thead>' +
+					'\t\t\t<tr style="background: #fff;">' +
+					'\t\t\t\t<th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e9ecef;">Name</th>' +
+					'\t\t\t\t<th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e9ecef;">Slug</th>' +
+					'\t\t\t\t<th style="text-align: left; padding: 10px 12px; border-bottom: 1px solid #e9ecef;">Updated</th>' +
+					'\t\t\t\t<th style="text-align: right; padding: 10px 12px; border-bottom: 1px solid #e9ecef;">Actions</th>' +
+					'\t\t\t</tr>' +
+					'\t\t</thead>' +
+					'\t\t<tbody>' +
+					'\t\t\t' + rows +
+					'\t\t</tbody>' +
+					'\t</table>' +
+					'</div>';
+
+
+			} catch (e) {
+				container.innerHTML = '<div class="feature-card">Failed to load templates.</div>';
+			}
+		}
+
+		// Kick off templates loading after DOM is ready
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', loadTemplates);
+		} else {
+			loadTemplates();
+		}
 		
 		document.getElementById('apiKeyForm').addEventListener('submit', async function(e) {
 			e.preventDefault();
