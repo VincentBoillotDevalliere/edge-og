@@ -114,16 +114,9 @@ export async function handleDashboardUsage(context: RequestContext): Promise<Res
 		// Ensure auth env
 		validateAuthEnvironment(env, requestId);
 
-		// Extract and verify session cookie
+		// Strictly require authentication
 		const sessionToken = extractSessionTokenFromCookies(request);
-		if (!sessionToken) {
-			return new Response(JSON.stringify({ error: 'Unauthorized', request_id: requestId }), {
-				status: 401,
-				headers: { 'Content-Type': 'application/json' }
-			});
-		}
-
-		const payload = await verifyJWTToken<SessionPayload>(sessionToken, env.JWT_SECRET as string);
+		const payload = sessionToken ? await verifyJWTToken<SessionPayload>(sessionToken, env.JWT_SECRET as string) : null;
 		if (!payload) {
 			return new Response(JSON.stringify({ error: 'Unauthorized', request_id: requestId }), {
 				status: 401,
@@ -131,7 +124,7 @@ export async function handleDashboardUsage(context: RequestContext): Promise<Res
 			});
 		}
 
-		const accountId = payload.account_id;
+		const accountId = payload!.account_id;
 
 		// Load account to determine plan
 		const accountKey = `account:${accountId}`;
