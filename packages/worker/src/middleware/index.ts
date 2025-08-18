@@ -21,6 +21,37 @@ export const httpsRedirectMiddleware: Middleware = async (context, next) => {
 };
 
 /**
+ * Security headers middleware
+ * Adds HSTS (1 year) and other baseline security headers on HTTPS responses
+ */
+export const securityHeadersMiddleware: Middleware = async (context, next) => {
+	const response = await next();
+
+	// Only set HSTS on secure origins (browsers ignore it over HTTP anyway)
+	const isHttps = context.url.protocol === 'https:';
+	const newHeaders = new Headers(response.headers);
+
+	if (isHttps) {
+		// SC-1: HSTS for 1 year with subdomains and preload suggestion
+		if (!newHeaders.has('Strict-Transport-Security')) {
+			newHeaders.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+		}
+	}
+
+	// Conservative, broadly safe defaults (do not break image responses)
+	if (!newHeaders.has('X-Content-Type-Options')) newHeaders.set('X-Content-Type-Options', 'nosniff');
+	if (!newHeaders.has('Referrer-Policy')) newHeaders.set('Referrer-Policy', 'no-referrer');
+	if (!newHeaders.has('X-Frame-Options')) newHeaders.set('X-Frame-Options', 'DENY');
+	// Permissions-Policy with minimal surface
+	if (!newHeaders.has('Permissions-Policy')) newHeaders.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+
+	return new Response(response.body, {
+		status: response.status,
+		headers: newHeaders,
+	});
+};
+
+/**
  * Error handling middleware
  * Catches and formats errors consistently
  */

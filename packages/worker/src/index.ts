@@ -10,6 +10,7 @@ import { RequestContext } from './types/request';
 import { createRouter } from './routes/router';
 import { 
 	httpsRedirectMiddleware,
+	securityHeadersMiddleware,
 	errorHandlerMiddleware,
 	loggingMiddleware 
 } from './middleware';
@@ -39,6 +40,7 @@ export default {
 		// Create middleware chain
 		const middlewareChain = [
 			httpsRedirectMiddleware,
+			securityHeadersMiddleware,
 			errorHandlerMiddleware,
 			loggingMiddleware,
 		];

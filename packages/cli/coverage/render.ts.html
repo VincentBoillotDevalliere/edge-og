@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">2.64% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>5/189</span>
+                <span class='fraction'>0/189</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/0</span>
+                <span class='fraction'>1/1</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>1/1</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
-                <span class="quiet">Functions</span>
-                <span class='fraction'>0/13</span>
-            </div>
-        
-            
-            <div class='fl pad1y space-right2'>
-                <span class="strong">2.64% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>5/189</span>
+                <span class='fraction'>0/189</span>
             </div>
         
             
@@ -292,8 +292,8 @@
 <a name='L227'></a><a href='#L227'>227</a>
 <a name='L228'></a><a href='#L228'>228</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -301,9 +301,9 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -519,20 +519,20 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">export {};
 &nbsp;
-import satori, { type SatoriOptions } from 'satori';
-import { Resvg, initWasm } from '@resvg/resvg-wasm';
+<span class="cstat-no" title="statement not covered" >import satori, { type SatoriOptions } from 'satori';</span>
+<span class="cstat-no" title="statement not covered" >import { Resvg, initWasm } from '@resvg/resvg-wasm';</span>
 &nbsp;
 // Minimal logger
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >function log(data: Record&lt;string, unknown&gt;) {</span></span>
+<span class="cstat-no" title="statement not covered" >function log(data: Record&lt;string, unknown&gt;) {</span>
 <span class="cstat-no" title="statement not covered" >  try { console.log(JSON.stringify({ timestamp: new Date().toISOString(), ...data })); } catch {}</span>
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
 // WASM init state
-let wasmInitialized = false;
-let wasmInitializationPromise: Promise&lt;void&gt; | null = null;
-let wasmUnavailable = false;
+<span class="cstat-no" title="statement not covered" >let wasmInitialized = false;</span>
+<span class="cstat-no" title="statement not covered" >let wasmInitializationPromise: Promise&lt;void&gt; | null = null;</span>
+<span class="cstat-no" title="statement not covered" >let wasmUnavailable = false;</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >async function ensureWasmInitialized() {</span></span>
+<span class="cstat-no" title="statement not covered" >async function ensureWasmInitialized() {</span>
 <span class="cstat-no" title="statement not covered" >  if (wasmInitialized) return;</span>
 <span class="cstat-no" title="statement not covered" >  if (wasmUnavailable) throw new Error('WASM unavailable');</span>
 <span class="cstat-no" title="statement not covered" >  if (wasmInitializationPromise) return wasmInitializationPromise;</span>
@@ -561,7 +561,7 @@ let wasmUnavailable = false;
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
 // Template helpers
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >function getThemeColors(theme: 'light' | 'dark' | 'blue' | 'green' | 'purple') {</span></span>
+<span class="cstat-no" title="statement not covered" >function getThemeColors(theme: 'light' | 'dark' | 'blue' | 'green' | 'purple') {</span>
 <span class="cstat-no" title="statement not covered" >  const themes = {</span>
 <span class="cstat-no" title="statement not covered" >    light: { backgroundColor: '#ffffff', textColor: '#1a1a1a', accentColor: '#2563eb', cardColor: '#f9fafb' },</span>
 <span class="cstat-no" title="statement not covered" >    dark: { backgroundColor: '#1a1a1a', textColor: '#ffffff', accentColor: '#3b82f6', cardColor: '#374151' },</span>
@@ -572,7 +572,7 @@ let wasmUnavailable = false;
 <span class="cstat-no" title="statement not covered" >  return themes[theme] || themes.light;</span>
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >function getFontFamily(font: 'inter' | 'roboto' | 'playfair' | 'opensans', customFontUrl?: string) {</span></span>
+<span class="cstat-no" title="statement not covered" >function getFontFamily(font: 'inter' | 'roboto' | 'playfair' | 'opensans', customFontUrl?: string) {</span>
 <span class="cstat-no" title="statement not covered" >  if (customFontUrl) {</span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
 <span class="cstat-no" title="statement not covered" >      const fileName = new URL(customFontUrl).pathname.split('/').pop() || 'CustomFont';</span>
@@ -589,7 +589,7 @@ let wasmUnavailable = false;
 <span class="cstat-no" title="statement not covered" >  return fonts[font] || fonts.inter;</span>
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >function sanitizeText(text?: string) {</span></span>
+<span class="cstat-no" title="statement not covered" >function sanitizeText(text?: string) {</span>
 <span class="cstat-no" title="statement not covered" >  if (!text) return '';</span>
 <span class="cstat-no" title="statement not covered" >  return text</span>
 <span class="cstat-no" title="statement not covered" >    .replace(/&lt;\/?([^&gt;]*)&gt;/g, ' $1 ')</span>
@@ -599,7 +599,7 @@ let wasmUnavailable = false;
 <span class="cstat-no" title="statement not covered" >    .trim();</span>
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >function getEmojiGraphemes(): Record&lt;string, string&gt; {</span></span>
+<span class="cstat-no" title="statement not covered" >function getEmojiGraphemes(): Record&lt;string, string&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  return {</span>
 <span class="cstat-no" title="statement not covered" >    '🔥': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f525.svg',</span>
 <span class="cstat-no" title="statement not covered" >    '🚀': 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f680.svg',</span>
@@ -608,7 +608,7 @@ let wasmUnavailable = false;
 <span class="cstat-no" title="statement not covered" >  };</span>
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >function getEmojiHex(emoji: string): string | null {</span></span>
+<span class="cstat-no" title="statement not covered" >function getEmojiHex(emoji: string): string | null {</span>
 <span class="cstat-no" title="statement not covered" >  try {</span>
 <span class="cstat-no" title="statement not covered" >    const cps: string[] = [];</span>
 <span class="cstat-no" title="statement not covered" >    for (let i = 0; i &lt; emoji.length; i++) {</span>
@@ -624,7 +624,7 @@ let wasmUnavailable = false;
 <span class="cstat-no" title="statement not covered" >  }</span>
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >async function getFontsByName(fontName: 'inter' | 'roboto' | 'playfair' | 'opensans' = 'inter'): Promise&lt;SatoriOptions['fonts']&gt; {</span></span>
+<span class="cstat-no" title="statement not covered" >async function getFontsByName(fontName: 'inter' | 'roboto' | 'playfair' | 'opensans' = 'inter'): Promise&lt;SatoriOptions['fonts']&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  const FONT_CONFIGS = {</span>
 <span class="cstat-no" title="statement not covered" >    inter: { family: 'Inter', url: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;700' },</span>
 <span class="cstat-no" title="statement not covered" >    roboto: { family: 'Roboto', url: 'https://fonts.googleapis.com/css2?family=Roboto:wght@400;700' },</span>
@@ -650,7 +650,7 @@ let wasmUnavailable = false;
 <span class="cstat-no" title="statement not covered" >  ];</span>
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >async function getFontsByUrl(fontUrl: string): Promise&lt;SatoriOptions['fonts']&gt; {</span></span>
+<span class="cstat-no" title="statement not covered" >async function getFontsByUrl(fontUrl: string): Promise&lt;SatoriOptions['fonts']&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  const resp = await fetch(fontUrl);</span>
 <span class="cstat-no" title="statement not covered" >  if (!resp.ok) throw new Error(`Font fetch failed: ${resp.status}`);</span>
 <span class="cstat-no" title="statement not covered" >  const buf = await resp.arrayBuffer();</span>
@@ -660,7 +660,7 @@ let wasmUnavailable = false;
 <span class="cstat-no" title="statement not covered" >  ];</span>
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >async function generateSVG(element: unknown, opts: { width?: number; height?: number; fonts?: SatoriOptions['fonts'] } = {}): Promise&lt;string&gt; {</span></span>
+<span class="cstat-no" title="statement not covered" >async function generateSVG(element: unknown, opts: { width?: number; height?: number; fonts?: SatoriOptions['fonts'] } = {}): Promise&lt;string&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  const { width = 1200, height = 630, fonts = [] } = opts;</span>
 <span class="cstat-no" title="statement not covered" >  const defaultFonts = fonts.length &gt; 0 ? fonts : await getFontsByName('inter');</span>
 <span class="cstat-no" title="statement not covered" >  const svg = await satori(element as any, {</span>
@@ -677,7 +677,7 @@ let wasmUnavailable = false;
 <span class="cstat-no" title="statement not covered" >  return svg;</span>
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >async function svgToPng(svgString: string): Promise&lt;Uint8Array&gt; {</span></span>
+<span class="cstat-no" title="statement not covered" >async function svgToPng(svgString: string): Promise&lt;Uint8Array&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  await ensureWasmInitialized();</span>
 <span class="cstat-no" title="statement not covered" >  const resvg = new Resvg(svgString, { background: 'white', fitTo: { mode: 'width', value: 1200 } });</span>
 <span class="cstat-no" title="statement not covered" >  const png = resvg.render().asPng();</span>
@@ -685,7 +685,7 @@ let wasmUnavailable = false;
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
 // Default template roughly matching worker default
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >function DefaultTemplate({ title, description, theme, font, emoji = '🌟' }: { title?: string; description?: string; theme: 'light' | 'dark' | 'blue' | 'green' | 'purple'; font: 'inter' | 'roboto' | 'playfair' | 'opensans'; emoji?: string; }) {</span></span>
+<span class="cstat-no" title="statement not covered" >function DefaultTemplate({ title, description, theme, font, emoji = '🌟' }: { title?: string; description?: string; theme: 'light' | 'dark' | 'blue' | 'green' | 'purple'; font: 'inter' | 'roboto' | 'playfair' | 'opensans'; emoji?: string; }) {</span>
 <span class="cstat-no" title="statement not covered" >  const themeColors = getThemeColors(theme);</span>
 <span class="cstat-no" title="statement not covered" >  const fontFamily = getFontFamily(font);</span>
 <span class="cstat-no" title="statement not covered" >  const safeTitle = sanitizeText(title || 'Edge-OG').slice(0, 60);</span>
@@ -709,7 +709,7 @@ let wasmUnavailable = false;
 <span class="cstat-no" title="statement not covered" >  };</span>
 <span class="cstat-no" title="statement not covered" >}</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >export async function renderOpenGraphImage(params: {</span></span>
+<span class="cstat-no" title="statement not covered" >export async function renderOpenGraphImage(params: {</span>
   title?: string;
   description?: string;
   theme?: 'light' | 'dark' | 'blue' | 'green' | 'purple';
@@ -751,7 +751,7 @@ let wasmUnavailable = false;
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-08-18T14:38:18.117Z
+                at 2025-08-18T17:04:34.240Z
             </div>
         <script src="prettify.js"></script>
         <script>
