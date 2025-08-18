@@ -32,7 +32,9 @@ export default function UsageWidget() {
       }
 
       started = performance.now();
-      const res = await fetch("/dashboard/usage", {
+  const base = process.env.NEXT_PUBLIC_EDGE_OG_BASE || "";
+  const url = base ? `${base}/dashboard/usage` : "/dashboard/usage";
+  const res = await fetch(url, {
         credentials: "include",
         headers: { Accept: "application/json" },
         signal,

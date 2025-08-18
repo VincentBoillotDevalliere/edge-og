@@ -1,0 +1,21 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "pnpm -w -C packages/worker test -r templates-list",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"-w",
+				"-C",
+				"packages/worker",
+				"test",
+				"-r",
+				"templates-list"
+			],
+			"problemMatcher": [
+				"$tsc"
+			]
+		}
+	]
+}

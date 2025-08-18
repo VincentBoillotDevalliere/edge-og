@@ -1,3 +1,13 @@
+# Dashboard (Next.js)
+
+Local dev expects a running Edge-OG Worker on http://localhost:8787.
+
+Create a `.env.local` with:
+
+NEXT_PUBLIC_EDGE_OG_BASE=http://localhost:8787
+
+Then run `pnpm dev` in this folder.
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

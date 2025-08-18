@@ -2,6 +2,7 @@
 export * from './auth';
 export * from './dashboard';
 export * from './api-keys';
+export { handleTemplatesList } from './templates';
 export * from './og';
 export * from './static';
 export * from './admin';

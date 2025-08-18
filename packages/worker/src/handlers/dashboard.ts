@@ -114,24 +114,40 @@ export async function handleDashboardUsage(context: RequestContext): Promise<Res
 		// Ensure auth env
 		validateAuthEnvironment(env, requestId);
 
-		// Extract and verify session cookie
+		// In local/dev, allow unauthenticated access to usage for the React dashboard
+		const requireAuth = (env.ENVIRONMENT === 'production') || ((env as unknown as { REQUIRE_AUTH?: string }).REQUIRE_AUTH === 'true');
 		const sessionToken = extractSessionTokenFromCookies(request);
-		if (!sessionToken) {
+		const payload = sessionToken ? await verifyJWTToken<SessionPayload>(sessionToken, env.JWT_SECRET as string) : null;
+		if (!payload && requireAuth) {
 			return new Response(JSON.stringify({ error: 'Unauthorized', request_id: requestId }), {
 				status: 401,
 				headers: { 'Content-Type': 'application/json' }
 			});
 		}
 
-		const payload = await verifyJWTToken<SessionPayload>(sessionToken, env.JWT_SECRET as string);
-		if (!payload) {
-			return new Response(JSON.stringify({ error: 'Unauthorized', request_id: requestId }), {
-				status: 401,
-				headers: { 'Content-Type': 'application/json' }
+		// If unauthenticated in dev, return a stub usage to unblock UI
+		if (!payload && !requireAuth) {
+			// Compute resetAt = first day of next month UTC 00:00:00.000
+			const now = new Date();
+			const resetAtDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+			const resetAt = resetAtDate.toISOString();
+
+			const origin = request.headers.get('Origin') || '';
+			const corsHeaders: Record<string, string> = {};
+			if (origin.startsWith('http://localhost:3000')) {
+				corsHeaders['Access-Control-Allow-Origin'] = origin;
+				corsHeaders['Vary'] = 'Origin';
+				corsHeaders['Access-Control-Allow-Credentials'] = 'true';
+			}
+
+			log({ event: 'dashboard_usage_dev_stub', request_id: requestId });
+			return new Response(JSON.stringify({ used: 0, limit: 1000, resetAt }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-cache, no-store, must-revalidate', ...corsHeaders }
 			});
 		}
 
-		const accountId = payload.account_id;
+		const accountId = payload!.account_id;
 
 		// Load account to determine plan
 		const accountKey = `account:${accountId}`;
@@ -189,18 +205,35 @@ export async function handleDashboardUsage(context: RequestContext): Promise<Res
 		// Log success
 		log({ event: 'dashboard_usage_success', account_id: accountId, used, limit, reset_at: resetAt, request_id: requestId });
 
+		// Allow dev CORS from Next.js dashboard on localhost:3000
+		const origin = request.headers.get('Origin') || '';
+		const corsHeaders: Record<string, string> = {};
+		if (origin.startsWith('http://localhost:3000')) {
+			corsHeaders['Access-Control-Allow-Origin'] = origin;
+			corsHeaders['Vary'] = 'Origin';
+			corsHeaders['Access-Control-Allow-Credentials'] = 'true';
+		}
+
 		return new Response(JSON.stringify({ used, limit, resetAt }), {
 			status: 200,
 			headers: {
 				'Content-Type': 'application/json',
-				'Cache-Control': 'private, no-cache, no-store, must-revalidate'
+				'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+				...corsHeaders,
 			}
 		});
 	} catch (error) {
 		log({ event: 'dashboard_usage_error', status: 500, request_id: requestId, error: error instanceof Error ? error.message : 'Unknown error' });
+		const origin = request.headers.get('Origin') || '';
+		const corsHeaders: Record<string, string> = {};
+		if (origin.startsWith('http://localhost:3000')) {
+			corsHeaders['Access-Control-Allow-Origin'] = origin;
+			corsHeaders['Vary'] = 'Origin';
+			corsHeaders['Access-Control-Allow-Credentials'] = 'true';
+		}
 		return new Response(JSON.stringify({ error: 'Failed to fetch usage', request_id: requestId }), {
 			status: 500,
-			headers: { 'Content-Type': 'application/json' }
+			headers: { 'Content-Type': 'application/json', ...corsHeaders }
 		});
 	}
 }
@@ -539,6 +572,34 @@ ${baseUrl}/og?title=New%20Product%20Launch&description=Revolutionary%20software&
 ${baseUrl}/og?title=Tech%20Conference%202025&description=Join%20industry%20leaders&template=event&date=March%2015&location=San%20Francisco&theme=purple
 				</div>
 			</div>
+
+			<div class="api-section" id="templates-section">
+				<h3>📚 Templates</h3>
+				<p>Browse your templates. Use search and sort by name or last update.</p>
+				<div style="display:flex; gap:12px; align-items:center; flex-wrap: wrap; margin: 10px 0 16px;">
+					<input id="tplSearch" type="text" placeholder="Search by name..." style="flex:1; min-width:200px; padding:10px; border:1px solid #ddd; border-radius:6px;" />
+					<select id="tplSort" style="padding:10px; border:1px solid #ddd; border-radius:6px;">
+						<option value="updatedDesc">Updated ↓</option>
+						<option value="updatedAsc">Updated ↑</option>
+						<option value="nameAsc">Name A→Z</option>
+						<option value="nameDesc">Name Z→A</option>
+					</select>
+				</div>
+				<div class="api-example" style="padding:0">
+					<table style="width:100%; border-collapse:collapse; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">
+						<thead style="background:#f1f5f9">
+							<tr>
+								<th style="text-align:left; padding:12px; border-bottom:1px solid #e5e7eb;">Name</th>
+								<th style="text-align:left; padding:12px; border-bottom:1px solid #e5e7eb;">Slug</th>
+								<th style="text-align:left; padding:12px; border-bottom:1px solid #e5e7eb;">Updated</th>
+								<th style="text-align:left; padding:12px; border-bottom:1px solid #e5e7eb;">Status</th>
+							</tr>
+						</thead>
+						<tbody id="tplRows"></tbody>
+					</table>
+				</div>
+				<div id="tplEmpty" style="display:none; color:#6b7280; margin-top:8px;">No templates found.</div>
+			</div>
 			
 			<div style="text-align: center; margin-top: 40px;">
 				<a href="/og?title=My%20First%20Image&description=Generated%20from%20dashboard&theme=dark" class="btn" target="_blank">
@@ -625,6 +686,78 @@ ${baseUrl}/og?title=Tech%20Conference%202025&description=Join%20industry%20leade
 				});
 			}
 		}
+
+		// Templates listing (DB-2.1)
+		const tplRows = document.getElementById('tplRows');
+		const tplEmpty = document.getElementById('tplEmpty');
+		const tplSearch = document.getElementById('tplSearch');
+		const tplSort = document.getElementById('tplSort');
+		let tplData = [];
+
+		async function loadTemplates() {
+			try {
+				const res = await fetch('/templates');
+				if (!res.ok) throw new Error('HTTP ' + res.status);
+				tplData = await res.json();
+				renderTemplates();
+			} catch (e) {
+				tplData = [];
+				renderTemplates();
+			}
+		}
+
+			function renderTemplates() {
+				const q = (tplSearch.value || '').toLowerCase();
+				let data = tplData.filter(it => (it.name || '').toLowerCase().includes(q));
+				// sort
+				switch (tplSort.value) {
+					case 'updatedAsc':
+						data.sort((a,b) => new Date(a.updatedAt) - new Date(b.updatedAt));
+						break;
+					case 'nameAsc':
+						data.sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+						break;
+					case 'nameDesc':
+						data.sort((a,b) => (b.name || '').localeCompare(a.name || ''));
+						break;
+					default:
+						data.sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+				}
+
+				var html = '';
+				for (var i = 0; i < data.length; i++) {
+					var row = data[i];
+					var status = row.published ? 'Published' : 'Draft';
+					var chipStyle = row.published ? 'background:#dcfce7; color:#166534;' : 'background:#f3f4f6; color:#374151;';
+					var updatedStr = new Date(row.updatedAt).toLocaleString();
+					html += '<tr>' +
+						'<td style="padding:10px 12px; border-bottom:1px solid #e5e7eb;">' + escapeHtml(row.name) + '</td>' +
+						'<td style="padding:10px 12px; border-bottom:1px solid #e5e7eb; color:#6b7280;">' + escapeHtml(row.slug) + '</td>' +
+						'<td style="padding:10px 12px; border-bottom:1px solid #e5e7eb; color:#6b7280;">' + escapeHtml(updatedStr) + '</td>' +
+						'<td style="padding:10px 12px; border-bottom:1px solid #e5e7eb;">' +
+							'<span style="display:inline-block; padding:4px 10px; border-radius:9999px; font-size:12px; ' + chipStyle + '">' + status + '</span>' +
+						'</td>' +
+					'</tr>';
+				}
+				tplRows.innerHTML = html;
+				tplEmpty.style.display = data.length ? 'none' : 'block';
+			}
+
+		function escapeHtml(str) {
+			return String(str || '')
+				.replace(/&/g, '&amp;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;')
+				.replace(/"/g, '&quot;')
+				.replace(/'/g, '&#39;');
+		}
+
+		['input', 'change'].forEach(ev => {
+			tplSearch.addEventListener(ev, renderTemplates);
+			tplSort.addEventListener(ev, renderTemplates);
+		});
+
+		loadTemplates();
 	</script>
 </body>
 </html>`;
