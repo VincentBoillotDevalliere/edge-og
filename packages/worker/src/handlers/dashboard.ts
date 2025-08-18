@@ -114,10 +114,32 @@ export async function handleDashboardUsage(context: RequestContext): Promise<Res
 		// Ensure auth env
 		validateAuthEnvironment(env, requestId);
 
-		// Strictly require authentication
+		// Require authentication by default, but allow explicit dev stub when enabled
 		const sessionToken = extractSessionTokenFromCookies(request);
 		const payload = sessionToken ? await verifyJWTToken<SessionPayload>(sessionToken, env.JWT_SECRET as string) : null;
 		if (!payload) {
+			const devFlag = (env as any).DEV_ALLOW_DASHBOARD_USAGE as string | undefined;
+			const allowDevStub = devFlag === 'true' || devFlag === '1';
+			if (allowDevStub) {
+				// Compute resetAt = first day of next month UTC 00:00:00.000
+				const now = new Date();
+				const resetAtDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+				const resetAt = resetAtDate.toISOString();
+
+				const origin = request.headers.get('Origin') || '';
+				const corsHeaders: Record<string, string> = {};
+				if (origin.startsWith('http://localhost:3000')) {
+					corsHeaders['Access-Control-Allow-Origin'] = origin;
+					corsHeaders['Vary'] = 'Origin';
+					corsHeaders['Access-Control-Allow-Credentials'] = 'true';
+				}
+
+				log({ event: 'dashboard_usage_dev_stub', request_id: requestId });
+				return new Response(JSON.stringify({ used: 0, limit: 1000, resetAt }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-cache, no-store, must-revalidate', ...corsHeaders }
+				});
+			}
 			return new Response(JSON.stringify({ error: 'Unauthorized', request_id: requestId }), {
 				status: 401,
 				headers: { 'Content-Type': 'application/json' }
@@ -151,8 +173,8 @@ export async function handleDashboardUsage(context: RequestContext): Promise<Res
 
 		try {
 			// List keys and filter by account via metadata
-			const listResult = await env.API_KEYS.list({ prefix: 'key:' });
-			const keysForAccount = listResult.keys.filter(k => {
+			const listResult = await (env as any).API_KEYS.list({ prefix: 'key:' });
+			const keysForAccount = listResult.keys.filter((k: any) => {
 				const md = k.metadata as { account?: string } | undefined;
 				return md && md.account === accountId;
 			});

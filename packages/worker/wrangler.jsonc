@@ -7,8 +7,12 @@
 	"name": "edge-og-worker",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-07-26",
+	"dev": {
+		"ip": "127.0.0.1",
+		"port": 8787
+	},
 	"observability": {
-		"enabled": true
+		"enabled": false
 	},
 	/**
 	 * Smart Placement

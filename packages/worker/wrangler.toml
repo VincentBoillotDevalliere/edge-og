@@ -2,6 +2,15 @@ name = "edge-og-worker"
 main = "src/index.ts"
 compatibility_date = "2025-07-26"
 
+# NOTE: This TOML is the single source of truth for Wrangler config in dev.
+# We intentionally removed wrangler.jsonc to avoid conflicting settings that
+# can force remote preview mode or OAuth prompts. Use `pnpm dev` which runs
+# `wrangler dev --local` to ensure a stable, Miniflare-only environment.
+
+[dev]
+ip = "127.0.0.1"
+port = 8787
+
 [[kv_namespaces]]
 binding = "TEMPLATES"
 id = "⚙️ prod_id"
@@ -16,11 +25,6 @@ preview_id = "⚙️ usage_preview_id"
 binding = "ACCOUNTS"
 id = "⚙️ accounts_id"
 preview_id = "⚙️ accounts_preview_id"
-
-[[kv_namespaces]]
-binding = "API_KEYS"
-id = "⚙️ api_keys_id"
-preview_id = "⚙️ api_keys_preview_id"
 
 [vars]
 BASE_URL = "https://edge-og-worker.edge-og.workers.dev"

@@ -9,7 +9,9 @@ import { WorkerError } from '../utils/error';
 export const httpsRedirectMiddleware: Middleware = async (context, next) => {
 	const { url } = context;
 	
-	if (url.protocol === 'http:' && !url.hostname.includes('localhost')) {
+	// Allow local development without redirecting to https
+	const isLocalHost = url.hostname.includes('localhost') || url.hostname === '127.0.0.1' || url.hostname === '0.0.0.0';
+	if (url.protocol === 'http:' && !isLocalHost) {
 		const httpsUrl = new URL(context.request.url);
 		httpsUrl.protocol = 'https:';
 		return Response.redirect(httpsUrl.toString(), 301);
