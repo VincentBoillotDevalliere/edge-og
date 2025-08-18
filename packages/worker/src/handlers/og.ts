@@ -3,7 +3,7 @@ import { WorkerError } from '../utils/error';
 import { log } from '../utils/logger';
 import { TemplateType } from '../templates';
 import { renderOpenGraphImage } from '../render';
-import { verifyAPIKey } from '../utils/auth';
+import { verifyAPIKey, verifyJWTToken, SessionPayload } from '../utils/auth';
 import { checkAndIncrementQuota } from '../utils/quota';
 import { incrementDailyOverage } from '../kv/overage';
 import { 
@@ -33,12 +33,45 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 	const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('x-forwarded-for') || undefined;
 	const startRender = performance.now();
 
-	// AQ-2.3: Require Authorization: Bearer API key
+	// EC-1: Get cache status for monitoring
+	const cacheStatus = getCacheStatus(request);
+
+	// Validate and extract query parameters (we need templateId early for session-based preview auth)
+	const params = validateOGParams(url.searchParams, requestId);
+
+	// Optional session-based authentication for preview-by-ID (DB-2.3 UI flow)
+	let sessionAuth = false;
+	let sessionAccountId: string | null = null;
+	if (params.templateId) {
+		const cookieHeader = request.headers.get('Cookie') || '';
+		if (cookieHeader.includes('edge_og_session=')) {
+			try {
+				const cookies = cookieHeader.split(';').reduce((acc, part) => {
+					const [k, ...rest] = part.trim().split('=');
+					acc[k] = rest.join('=');
+					return acc;
+				}, {} as Record<string, string>);
+				const token = cookies['edge_og_session'];
+				if (token) {
+					const payload = await verifyJWTToken<SessionPayload>(token, (env.JWT_SECRET as string) || '');
+					if (payload && payload.account_id) {
+						sessionAuth = true;
+						sessionAccountId = payload.account_id;
+					}
+				}
+			} catch {}
+		}
+	}
+
+	// AQ-2.3: Require Authorization: Bearer API key unless we have a valid session preview
 	// Production default: enforce; allow opt-out in development unless explicitly required
-	const requireAuth = env.ENVIRONMENT === 'production' || (env as unknown as { REQUIRE_AUTH?: string }).REQUIRE_AUTH === 'true';
-	if (requireAuth) {
+	const envName = (env as any).ENVIRONMENT as string | undefined;
+	const shouldEnforceAuth = envName === 'production' || (env as any).REQUIRE_AUTH === 'true';
+	const mustVerifyApiKey = shouldEnforceAuth && !sessionAuth;
+	let auth: Awaited<ReturnType<typeof verifyAPIKey>> | null = null;
+	if (mustVerifyApiKey) {
 		const authHeader = request.headers.get('Authorization') || '';
-		const auth = await verifyAPIKey(authHeader, env);
+		auth = await verifyAPIKey(authHeader, env);
 		if (!auth) {
 			// AQ-4.1: Log structured auth failure with {event, kid (if any), ip}
 			let kid: string | undefined;
@@ -65,8 +98,6 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 		if (!quota.allowed) {
 			// BI-2: Paid plans switch to pay-as-you-go overage instead of hard block
 			if (plan && plan !== 'free') {
-				// Map kid -> accountId by reading API_KEYS when needed would be extra cost; we already have accountId from auth
-				// Record one overage unit for the owning account for J+1 metered billing
 				try {
 					await incrementDailyOverage(env, auth.accountId);
 					log({ event: 'overage_recorded', kid: auth.kid, account_id: auth.accountId, plan, current: quota.current, limit: quota.limit, request_id: requestId });
@@ -75,7 +106,6 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 				}
 				// Continue processing the request (no 429)
 			} else {
-				// Free plan: still enforce hard limit per AQ-3.1
 				log({ event: 'quota_refused', kid: auth.kid, ip, plan, current: quota.current, limit: quota.limit, request_id: requestId });
 				return new Response(
 					JSON.stringify({
@@ -87,18 +117,41 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 					}),
 					{
 						status: 429,
-						headers: { 'Content-Type': 'application/json', 'Retry-After': '2592000' }, // ~30 days
+						headers: { 'Content-Type': 'application/json', 'Retry-After': '2592000' },
 					}
 				);
 			}
 		}
 	}
 
-	// EC-1: Get cache status for monitoring
-	const cacheStatus = getCacheStatus(request);
-
-	// Validate and extract query parameters
-	const params = validateOGParams(url.searchParams, requestId);
+	// DB-2.3: Preview a template by ID (maps to built-in slug for now)
+	// If templateId is provided, load the template record from KV and set the template slug accordingly.
+	// Note: We don't enforce published=true for preview; DB-2.5 will handle publish behavior for general serving.
+	let isPreviewById = false;
+	if (params.templateId) {
+		const kvKey = `template:${params.templateId}`;
+		const rec = await env.TEMPLATES.get(kvKey, 'json') as (null | {
+			id: string;
+			account: string;
+			name: string;
+			slug: string;
+			source: string;
+			version: number;
+			createdAt: string;
+			updatedAt: string;
+			published: boolean;
+		});
+		if (!rec) {
+			throw new WorkerError('Template not found', 404, requestId);
+		}
+		// If using session-based auth, enforce ownership
+		if (sessionAuth && sessionAccountId && rec.account !== sessionAccountId) {
+			throw new WorkerError('Forbidden', 403, requestId);
+		}
+		// Map stored slug to built-in template type for rendering
+		(params as any).template = rec.slug as TemplateType;
+		isPreviewById = true;
+	}
 	
 	// EC-1: Normalize parameters for consistent caching
 	const normalizedParams = normalizeParams(url.searchParams);
@@ -126,7 +179,7 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 	// Generate the image with error handling for WASM issues
 	let result: string | Uint8Array;
 	try {
-		result = await renderOpenGraphImage(params);
+		result = await renderOpenGraphImage({ ...params, preview: isPreviewById });
 	} catch (error) {
 		// Check if this is a WASM compilation error that should be handled gracefully
 		if (error instanceof Error && (
@@ -139,7 +192,7 @@ export async function handleOGImageGeneration(context: RequestContext): Promise<
 			
 			// Try to generate SVG instead
 			try {
-				result = await renderOpenGraphImage({ ...params, format: 'svg' });
+				result = await renderOpenGraphImage({ ...params, format: 'svg', preview: isPreviewById });
 			} catch (svgError) {
 				log({ event: 'svg_fallback_failed', status: 500, request_id: requestId, message: svgError instanceof Error ? svgError.message : String(svgError) });
 				throw new WorkerError('Image generation failed', 500, requestId);
@@ -252,6 +305,7 @@ function validateOGParams(searchParams: URLSearchParams, requestId: string): {
 	template?: TemplateType;
 	format?: 'png' | 'svg';
 	emoji?: string; // CG-5: Emoji support
+	templateId?: string; // DB-2.3: Preview KV template by ID
 	// Template-specific parameters
 	author?: string;
 	price?: string;
@@ -275,6 +329,7 @@ function validateOGParams(searchParams: URLSearchParams, requestId: string): {
 	const font = searchParams.get('font');
 	const fontUrl = searchParams.get('fontUrl'); // CG-4: Custom font URL
 	const template = searchParams.get('template');
+	const templateId = searchParams.get('templateId');
 	const format = searchParams.get('format');
 	const emoji = searchParams.get('emoji'); // CG-5: Emoji support
 	
@@ -347,6 +402,16 @@ function validateOGParams(searchParams: URLSearchParams, requestId: string): {
 		throw new WorkerError(`Invalid template parameter. Must be one of: ${validTemplates.join(', ')}`, 400, requestId);
 	}
 
+	// DB-2.3: Validate templateId format (UUID v4 or slug-like id) and length
+	if (templateId) {
+		if (templateId.length > 64) {
+			throw new WorkerError('templateId too long (max 64 characters)', 400, requestId);
+		}
+		if (!/^[a-z0-9-]{10,64}$/.test(templateId)) {
+			throw new WorkerError('Invalid templateId format', 400, requestId);
+		}
+	}
+
 	return {
 		title: title || undefined,
 		description: description || undefined,
@@ -372,5 +437,6 @@ function validateOGParams(searchParams: URLSearchParams, requestId: string): {
 		name: name || undefined,
 		instructor: instructor || undefined,
 		level: level || undefined,
+	templateId: templateId || undefined,
 	};
 }

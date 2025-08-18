@@ -34,6 +34,7 @@ export async function renderOpenGraphImage(params: {
   template?: TemplateType;
   format?: 'png' | 'svg'; // Development flag for testing
   fallbackToSvg?: boolean; // Auto-fallback when PNG fails
+  preview?: boolean; // DB-2.3: render smaller preview size
   // Template-specific parameters
   author?: string;
   price?: string;
@@ -61,7 +62,8 @@ export async function renderOpenGraphImage(params: {
     template = 'default', 
     format = 'png', 
     fallbackToSvg = true,
-    emoji, // CG-5: Custom emoji support
+  emoji, // CG-5: Custom emoji support
+  preview,
     // Template-specific params
     ...templateSpecificParams
   } = params;
@@ -163,8 +165,8 @@ export async function renderOpenGraphImage(params: {
 
   // Step 1: Generate SVG using Satori with the selected font
   const svg = await generateSVG(element, {
-    width: 1200,
-    height: 630,
+    width: preview ? 800 : 1200,
+    height: preview ? 420 : 630,
     fonts: fontUrl 
       ? await getFontsByUrl(fontUrl) // CG-4: Load custom font from URL
       : await getFontsByName(font), // Load fonts based on selection
