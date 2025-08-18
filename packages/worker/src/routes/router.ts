@@ -10,6 +10,7 @@ import {
 	handleDashboardUsage,
 	handleTemplatesList,
 	handleTemplatesCreate,
+	handleTemplateUpdate,
 	handleAPIKeyGeneration,
 	handleAPIKeyListing,
 	handleAPIKeyRevocation,
@@ -56,6 +57,11 @@ export class Router {
 
 		// Handle special cases
 		
+		// Templates update with dynamic ID: PUT /templates/{id}
+		if (method === 'PUT' && pathname.startsWith('/templates/')) {
+			return handleTemplateUpdate(context);
+		}
+
 		// API key revocation with dynamic ID: DELETE /dashboard/api-keys/{keyId}
 		// Also forward malformed paths (e.g., missing keyId) to the handler so it can return 400 as per tests
 		if (method === 'DELETE' && pathname.startsWith('/dashboard/api-keys/')) {
@@ -89,6 +95,7 @@ export function createRouter(): Router {
 
 	router.addRoute('GET', '/templates', handleTemplatesList);
 	router.addRoute('POST', '/templates', handleTemplatesCreate);
+	// Dynamic route for PUT /templates/{id} handled in special cases above
 	
 	router.addRoute('GET', '/dashboard/api-keys', handleAPIKeyListing);
 	router.addRoute('POST', '/dashboard/api-keys', handleAPIKeyGeneration);
