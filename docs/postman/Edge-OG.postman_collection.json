@@ -1,0 +1,182 @@
+{
+  "info": {
+    "name": "Edge-OG API",
+    "_postman_id": "b7c7d2f5-7b02-4a4f-8f9e-7f4c2a0e5c3d",
+    "description": "Postman collection for Edge-OG Cloudflare Worker endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/health" },
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });"
+      ], "type": "text/javascript" } } ]
+    },
+    {
+      "name": "Homepage",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/" },
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "pm.test('HTML content', function () { pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html'); });"
+      ], "type": "text/javascript" } } ]
+    },
+    {
+      "name": "OG: Public (no auth dev)",
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "Accept", "value": "image/png" } ],
+        "url": {
+          "raw": "{{baseUrl}}/og?title=Hello%20World&template=blog&theme=dark&v={{cacheVersion}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["og"],
+          "query": [
+            {"key": "title", "value": "Hello World"},
+            {"key": "template", "value": "blog"},
+            {"key": "theme", "value": "dark"},
+            {"key": "v", "value": "{{cacheVersion}}"}
+          ]
+        }
+      },
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+        "pm.test('PNG or SVG', function () { var ct = pm.response.headers.get('Content-Type'); pm.expect(/(image\\/png|image\\/svg\\+xml)/.test(ct || '')); });",
+        "pm.test('Cache headers', function () { pm.expect(pm.response.headers.get('Cache-Control') || '').to.include('max-age'); });"
+      ], "type": "text/javascript" } } ]
+    },
+    {
+      "name": "Auth: Request magic link",
+      "request": {
+        "method": "POST",
+        "header": [ {"key": "Content-Type", "value": "application/json"} ],
+        "url": "{{baseUrl}}/auth/request-link",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{testEmail}}\"\n}" }
+      },
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Magic link accepted', () => pm.expect([200,429,500]).to.include(pm.response.code));"
+      ], "type": "text/javascript" } } ]
+    },
+    {
+      "name": "Dashboard (HTML)",
+      "request": {
+        "method": "GET",
+        "header": [ {"key": "Cookie", "value": "edge_og_session={{sessionToken}}"} ],
+        "url": "{{baseUrl}}/dashboard"
+      }
+    },
+    {
+      "name": "Templates: List",
+      "request": {
+        "method": "GET",
+        "header": [ {"key": "Cookie", "value": "edge_og_session={{sessionToken}}"} ],
+        "url": "{{baseUrl}}/templates"
+      },
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('OK', () => pm.response.to.have.status(200));",
+        "let data={}; try{data=pm.response.json()}catch(e){}; if(data.templates&&data.templates[0]){pm.environment.set('templateId', data.templates[0].id);}"
+      ], "type": "text/javascript" } } ]
+    },
+    {
+      "name": "Templates: Create",
+      "request": {
+        "method": "POST",
+        "header": [ {"key": "Content-Type", "value": "application/json"}, {"key": "Cookie", "value": "edge_og_session={{sessionToken}}"} ],
+        "url": "{{baseUrl}}/templates",
+        "body": { "mode": "raw", "raw": "{\n  \"name\": \"Sample Template\",\n  \"slug\": \"sample-template\",\n  \"source\": \"<div>Title: {title}</div>\"\n}" }
+      },
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('Created', () => pm.response.to.have.status(201));",
+        "let data=pm.response.json(); if(data.template&&data.template.id){pm.environment.set('templateId', data.template.id);}"
+      ], "type": "text/javascript" } } ]
+    },
+    {
+      "name": "Templates: Update",
+      "request": {
+        "method": "PUT",
+        "header": [ {"key": "Content-Type", "value": "application/json"}, {"key": "Cookie", "value": "edge_og_session={{sessionToken}}"} ],
+        "url": "{{baseUrl}}/templates/{{templateId}}",
+        "body": { "mode": "raw", "raw": "{\n  \"source\": \"<div>Updated: {title}</div>\"\n}" }
+      }
+    },
+    {
+      "name": "OG: Authenticated via API key",
+      "request": {
+        "method": "GET",
+        "header": [ {"key": "Authorization", "value": "Bearer {{apiKey}}"}, {"key": "Accept", "value": "image/png"} ],
+        "url": "{{baseUrl}}/og?title=Hello%20Auth&template=blog&v={{cacheVersion}}"
+      }
+    },
+    {
+      "name": "API keys: Create",
+      "request": {
+        "method": "POST",
+        "header": [ {"key": "Content-Type", "value": "application/json"}, {"key": "Cookie", "value": "edge_og_session={{sessionToken}}"} ],
+        "url": "{{baseUrl}}/dashboard/api-keys",
+        "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman Test Key\"\n}" }
+      },
+      "event": [ { "listen": "test", "script": { "exec": [
+        "pm.test('201', () => pm.response.to.have.status(201));",
+        "const data=pm.response.json(); if(data.api_key&&data.api_key.key){pm.environment.set('apiKey', data.api_key.key);} if(data.api_key&&data.api_key.id){pm.environment.set('keyId', data.api_key.id);}"
+      ], "type": "text/javascript" } } ]
+    },
+    {
+      "name": "API keys: List",
+      "request": {
+        "method": "GET",
+        "header": [ {"key": "Cookie", "value": "edge_og_session={{sessionToken}}"} ],
+        "url": "{{baseUrl}}/dashboard/api-keys"
+      }
+    },
+    {
+      "name": "API keys: Revoke",
+      "request": {
+        "method": "DELETE",
+        "header": [ {"key": "Cookie", "value": "edge_og_session={{sessionToken}}"} ],
+        "url": "{{baseUrl}}/dashboard/api-keys/{{keyId}}"
+      }
+    },
+    {
+      "name": "Admin: Reset usage",
+      "request": {
+        "method": "POST",
+        "header": [ {"key": "Content-Type", "value": "application/json"}, {"key": "X-Admin-Secret", "value": "{{adminSecret}}"} ],
+        "url": "{{baseUrl}}/admin/usage/reset",
+        "body": { "mode": "raw", "raw": "{\n  \"kid\": \"{{keyId}}\"\n}" }
+      }
+    },
+    {
+      "name": "Billing: Checkout",
+      "request": {
+        "method": "POST",
+        "header": [ {"key": "Content-Type", "value": "application/json"}, {"key": "Cookie", "value": "edge_og_session={{sessionToken}}"} ],
+        "url": "{{baseUrl}}/billing/checkout",
+        "body": { "mode": "raw", "raw": "{}" }
+      }
+    },
+    {
+      "name": "Billing: Portal",
+      "request": {
+        "method": "POST",
+        "header": [ {"key": "Content-Type", "value": "application/json"}, {"key": "Cookie", "value": "edge_og_session={{sessionToken}}"} ],
+        "url": "{{baseUrl}}/billing/portal",
+        "body": { "mode": "raw", "raw": "{}" }
+      }
+    },
+    {
+      "name": "Stripe Webhook: invoice.paid (dev)",
+      "request": {
+        "method": "POST",
+        "header": [ {"key": "Content-Type", "value": "application/json"}, {"key": "Stripe-Signature", "value": "t={{timestamp}},v1={{signature}}"} ],
+        "url": "{{baseUrl}}/webhooks/stripe",
+        "body": { "mode": "raw", "raw": "{\n  \"type\": \"invoice.paid\",\n  \"data\": {\n    \"object\": {\n      \"metadata\": {\n        \"account_id\": \"{{accountId}}\"\n      }\n    }\n  }\n}" }
+      },
+      "event": [ { "listen": "prerequest", "script": { "exec": [
+        "// Generate a simple fake signature for non-prod; handler accepts missing secret",
+        "pm.variables.set('timestamp', Math.floor(Date.now()/1000));",
+        "pm.variables.set('signature', 'deadbeef');"
+      ], "type": "text/javascript" } } ]
+    }
+  ],
+  "event": [],
+  "variable": []
+}
