@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "edge-og-worker",
+	"name": "demo",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-07-26",
 	"dev": {
@@ -32,7 +32,7 @@
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
 	"vars": { 
-		"BASE_URL": "https://edge-og-worker.edge-og.workers.dev"
+		"BASE_URL": "https://demo.edge-og.workers.dev"
 	},
 	// ⚠️  SECURITY: Move secrets to `wrangler secret put` for production
 	/**
