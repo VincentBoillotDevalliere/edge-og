@@ -4,8 +4,8 @@
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers/)
 [![pnpm](https://img.shields.io/badge/pnpm-10%2B-F69220?logo=pnpm&logoColor=white)](https://pnpm.io)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
-[![Monorepo](https://img.shields.io/badge/repo-monorepo-6f42c1)](./)
-[![Rendering](https://img.shields.io/badge/Render-satori%20%E2%86%92%20SVG%20%E2%86%92%20resvg--wasm%20%E2%86%92%20PNG-0E7C86)](./docs/WASM-ERROR-FIX.md)
+[![API /og](https://img.shields.io/badge/API-/og-0366d6)](#public-api)
+[![Cache](https://img.shields.io/badge/Cache-1y%20immutable-2ea44f)](#caching--performance)
 
 Edge-OG is a micro‑SaaS that generates Open Graph images instantly on Cloudflare Workers with near‑zero infra cost and a developer‑first DX.
 
